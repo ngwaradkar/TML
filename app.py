@@ -1356,8 +1356,11 @@ def main():
         if not model_df.empty:
             # Highlight total rows
             def style_total_row(row):
-                if "TOTAL" in str(row.get("MODEL", "")):
-                    return ["background-color: #e0e7ff; font-weight:700"] * len(row)
+                model_name = str(row.get("MODEL", "")).upper()
+                if "GRAND TOTAL" in model_name:
+                    return ["background-color: #dcfce7; color: #0f5132; font-weight:800"] * len(row)
+                elif "TOTAL" in model_name:
+                    return ["background-color: #e0e7ff; color: #1e3a8a; font-weight:700"] * len(row)
                 return [""] * len(row)
 
             styled = model_df.style
