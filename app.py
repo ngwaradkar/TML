@@ -29,6 +29,7 @@ WORKBOOK_NAMES = [
 ]
 
 RAW_FILE_TYPES = [
+    "Master Mapping Data",
     "Paint Float",
     "TCF1 Wiring File",
     "TCF2 Wiring File",
@@ -143,6 +144,10 @@ def _safe(ft: str) -> str:
 
 def find_workbook() -> Path | None:
     """Find the main Excel workbook in the project folder."""
+    custom_master = DATA_DIR / f"{_safe('Master Mapping Data')}.xlsx"
+    if custom_master.exists():
+        return custom_master
+        
     for name in WORKBOOK_NAMES:
         p = Path(name)
         if p.exists():
@@ -1173,12 +1178,10 @@ def main():
         if wb_path:
             st.success(f"✅ Workbook found: `{wb_path.name}`")
         else:
-            st.error("❌ Excel workbook not found in project folder.")
+            st.error("❌ Master workbook not found.")
             st.info(
-                "Place **'TCF VIN  & Paint Float mapping data.xlsx'** "
-                "(or the `-1` variant) in the same folder as this script."
+                "Please upload the **Master Mapping Data** in the Upload section below."
             )
-            st.stop()
 
         st.divider()
 
@@ -1235,6 +1238,15 @@ def main():
     # ═══════════════════════════════════════════
     # LOAD ALL DATA
     # ═══════════════════════════════════════════
+    
+    if not wb_path:
+        st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+        st.markdown(
+            '<div class="dash-header"><h1>TCF PPC Dashboard</h1>'
+            "<p>Please upload the Master Mapping Data in the sidebar to get started.</p></div>",
+            unsafe_allow_html=True,
+        )
+        return
 
     # ── Part Number Master (always from workbook) ──
     pm = load_part_master(str(wb_path))
