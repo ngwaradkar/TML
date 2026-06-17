@@ -1352,7 +1352,12 @@ def compute_cockpit_summary(
     # ── 2. Stock from cockpit files (mapped via Short VC → PM COCKPIT) ──
     stock_map = {}  # cockpit_module_part → {COVERAGE, TODAY_OP}
 
-    combined_cockpit = pd.concat([d for d in cockpit_dfs if d is not None and not d.empty], ignore_index=True)
+    valid_dfs = [d for d in cockpit_dfs if d is not None and not d.empty]
+    if valid_dfs:
+        combined_cockpit = pd.concat(valid_dfs, ignore_index=True)
+    else:
+        combined_cockpit = pd.DataFrame()
+        
     if not combined_cockpit.empty:
         # Map Short VC → COCKPIT module via PM
         merged = combined_cockpit.merge(pm_cockpit, on="SHORT_VC", how="left", suffixes=("_raw", "_pm"))
