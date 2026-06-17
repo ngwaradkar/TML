@@ -582,6 +582,12 @@ def to_excel(df_or_styler, sheet="Summary", table_type="generic") -> bytes:
     # Drop Today VIN from wiring and cockpit outputs to match the user shortage report image
     if table_type in ["wiring", "cockpit"]:
         df = df.drop(columns=["Today VIN"], errors="ignore")
+        if table_type == "cockpit":
+            df = df.rename(columns={
+                "Model/Line": "Model",
+                "Cabs FloatUPTO SEALANT": "Cabs Float UPTO SEALANT",
+                "Shortage for TOTAL FLOAT": "Shortage TOTAL FLOAT"
+            })
 
     with pd.ExcelWriter(buf, engine="openpyxl") as w:
         thin = Side(border_style="thin", color="000000")
@@ -687,7 +693,7 @@ def to_excel(df_or_styler, sheet="Summary", table_type="generic") -> bytes:
                 cell.font = Font(bold=True)
                 
                 if table_type in ["wiring", "cockpit"]:
-                    if i < 3: cell.fill = orange_fill
+                    if i < 2: cell.fill = orange_fill
                     else: cell.fill = blue_fill
                 else:
                     cell.fill = generic_fill
