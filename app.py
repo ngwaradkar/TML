@@ -1991,7 +1991,7 @@ def main():
                 st.dataframe(styled_w, use_container_width=True, hide_index=True, height=500)
 
                 st.download_button(
-                    "📥  Download Wiring Summary",
+                    "📥  Download Wiring Shortage Report",
                     to_excel(styled_w, "Wiring Summary", table_type="wiring"),
                     file_name=f"wiring_summary_{datetime.now().strftime('%Y%m%d')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -2039,7 +2039,7 @@ def main():
                 st.dataframe(styled_c, use_container_width=True, hide_index=True, height=500)
 
                 st.download_button(
-                    "📥  Download Cockpit Summary",
+                    "📥  Download Cockpit Shortage Report",
                     to_excel(styled_c, "Cockpit Summary", table_type="cockpit"),
                     file_name=f"cockpit_summary_{datetime.now().strftime('%Y%m%d')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
