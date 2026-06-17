@@ -437,7 +437,7 @@ def get_bom_info() -> dict:
         if matches:
             bom_path = max(matches, key=os.path.getmtime)
     if bom_path.exists():
-        mtime = datetime.fromtimestamp(os.path.getmtime(bom_path))
+        mtime = datetime.fromtimestamp(os.path.getmtime(bom_path), tz=timezone.utc).astimezone(timezone(timedelta(hours=5, minutes=30)))
         return {
             "loaded_at": mtime.strftime("%Y-%m-%d %H:%M:%S"),
             "row_count": 0,
@@ -2181,7 +2181,7 @@ def main():
             for ft in RAW_FILE_TYPES:
                 src_type, src_path = get_source(ft)
                 if src_type == "uploaded":
-                    mtime = datetime.fromtimestamp(os.path.getmtime(src_path))
+                    mtime = datetime.fromtimestamp(os.path.getmtime(src_path), tz=timezone.utc).astimezone(timezone(timedelta(hours=5, minutes=30)))
                     age = (now - mtime).total_seconds()
                     badge_style = "background-color:#dcfce7; color:#15803d; border-radius:4px; padding:2px 6px; font-weight:bold; display:inline-block; font-size:0.8em;" if age < 86400 else "background-color:#fee2e2; color:#b91c1c; border-radius:4px; padding:2px 6px; font-weight:bold; display:inline-block; font-size:0.8em;"
                     ts = mtime.strftime("%d-%b %H:%M")
@@ -2194,7 +2194,7 @@ def main():
                         unsafe_allow_html=True
                     )
                 elif src_type == "scanned":
-                    mtime = datetime.fromtimestamp(os.path.getmtime(src_path))
+                    mtime = datetime.fromtimestamp(os.path.getmtime(src_path), tz=timezone.utc).astimezone(timezone(timedelta(hours=5, minutes=30)))
                     age = (now - mtime).total_seconds()
                     badge_style = "background-color:#dbeafe; color:#1d4ed8; border-radius:4px; padding:2px 6px; font-weight:bold; display:inline-block; font-size:0.8em;" if age < 86400 else "background-color:#fee2e2; color:#b91c1c; border-radius:4px; padding:2px 6px; font-weight:bold; display:inline-block; font-size:0.8em;"
                     ts = mtime.strftime("%d-%b %H:%M")
