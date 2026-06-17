@@ -2095,11 +2095,11 @@ def main():
 
                     for col in shortage_cols:
                         if col in df.columns:
-                            styled = styled.applymap(_color, subset=[col])
+                            styled = getattr(styled, "map", getattr(styled, "applymap", None))(_color, subset=[col])
 
                     # DPT VIN column highlight
                     if "Today VIN (DPT)" in df.columns:
-                        styled = styled.applymap(
+                        styled = getattr(styled, "map", getattr(styled, "applymap", None))(
                             lambda v: "background-color:#dbeafe; color:#1e3a8a; font-weight:600",
                             subset=["Today VIN (DPT)"]
                         )
