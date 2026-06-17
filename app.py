@@ -15,7 +15,11 @@ import re
 import shutil
 from pathlib import Path
 from io import BytesIO
-from datetime import datetime, time as dtime
+from datetime import datetime, time as dtime, timezone, timedelta
+
+def get_ist_now():
+    return datetime.now(timezone(timedelta(hours=5, minutes=30)))
+
 
 # ═══════════════════════════════════════════════════════════════
 # 1. CONSTANTS & CONFIGURATION
@@ -207,7 +211,7 @@ def _save_file_meta(file_type: str, original_name: str):
     DATA_DIR.mkdir(exist_ok=True)
     meta = _load_file_meta()
     meta[file_type] = {
-        "uploaded_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "uploaded_at": get_ist_now().strftime("%Y-%m-%d %H:%M:%S"),
         "original_name": original_name,
     }
     with open(_get_meta_path(), "w") as f:
@@ -234,7 +238,7 @@ def _save_last_reset(date_str: str):
     """Persist the date of the last reset."""
     DATA_DIR.mkdir(exist_ok=True)
     with open(RESET_STATE_FILE, "w") as f:
-        json.dump({"last_reset_date": date_str, "reset_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}, f, indent=2)
+        json.dump({"last_reset_date": date_str, "reset_time": get_ist_now().strftime("%Y-%m-%d %H:%M:%S")}, f, indent=2)
 
 
 def check_and_perform_daily_reset():
@@ -243,7 +247,7 @@ def check_and_perform_daily_reset():
     delete all uploaded data files and the engine stock JSON.
     This ensures a clean slate for each morning shift.
     """
-    now = datetime.now()
+    now = get_ist_now()
     today_str = now.strftime("%Y-%m-%d")
     last_reset = _get_last_reset()
 
@@ -348,7 +352,7 @@ def load_bom_master() -> pd.DataFrame:
             with open(BOM_FILE, "w") as f:
                 json.dump({
                     "source": str(bom_path),
-                    "loaded_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "loaded_at": get_ist_now().strftime("%Y-%m-%d %H:%M:%S"),
                     "row_count": len(df),
                     "data": records
                 }, f, indent=2)
@@ -390,7 +394,7 @@ def load_bom_master() -> pd.DataFrame:
             with open(BOM_FILE, "w") as f:
                 json.dump({
                     "source": str(con_path),
-                    "loaded_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "loaded_at": get_ist_now().strftime("%Y-%m-%d %H:%M:%S"),
                     "row_count": len(df),
                     "data": records
                 }, f, indent=2)
@@ -1651,7 +1655,7 @@ def main():
         st.toast("🔄 Daily 6:30 AM reset completed — all uploaded data cleared.", icon="🔄")
         st.rerun()
 
-    now = datetime.now()
+    now = get_ist_now()
     file_meta = _load_file_meta()
 
     # ═══════════════════════════════════════════
@@ -1758,7 +1762,7 @@ def main():
         '<div class="dash-header">'
         "<h1>🏭 TCF Production Planning Dashboard</h1>"
         f"<p>Live shortage monitoring &nbsp;·&nbsp; Line: <b>{line_filter}</b> "
-        f"&nbsp;·&nbsp; Data as of {datetime.now().strftime('%d %b %Y, %H:%M')}</p>"
+        f"&nbsp;·&nbsp; Data as of {get_ist_now().strftime('%d %b %Y, %H:%M')}</p>"
         "</div>",
         unsafe_allow_html=True,
     )
@@ -1838,7 +1842,7 @@ def main():
                 st.download_button(
                     "📥  Download Model Wise Float",
                     to_excel(styled, "Model Wise Float", table_type="generic"),
-                    file_name=f"model_wise_float_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                    file_name=f"model_wise_float_{get_ist_now().strftime('%Y%m%d')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
             else:
@@ -1945,7 +1949,7 @@ def main():
                 st.download_button(
                     "📥  Download Engine Summary",
                     to_excel(result, "Engine Summary", table_type="engine"),
-                    file_name=f"engine_summary_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                    file_name=f"engine_summary_{get_ist_now().strftime('%Y%m%d')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
 
@@ -1993,7 +1997,7 @@ def main():
                 st.download_button(
                     "📥  Download Wiring Shortage Report",
                     to_excel(styled_w, "Wiring Summary", table_type="wiring"),
-                    file_name=f"wiring_summary_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                    file_name=f"wiring_summary_{get_ist_now().strftime('%Y%m%d')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
 
@@ -2041,7 +2045,7 @@ def main():
                 st.download_button(
                     "📥  Download Cockpit Shortage Report",
                     to_excel(styled_c, "Cockpit Summary", table_type="cockpit"),
-                    file_name=f"cockpit_summary_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                    file_name=f"cockpit_summary_{get_ist_now().strftime('%Y%m%d')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
 
@@ -2145,7 +2149,7 @@ def main():
                 st.download_button(
                     "📥  Download VIN vs Float",
                     to_excel(vin_float_df, "VIN vs Float", table_type="generic"),
-                    file_name=f"vin_vs_float_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                    file_name=f"vin_vs_float_{get_ist_now().strftime('%Y%m%d')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
 
