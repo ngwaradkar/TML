@@ -12,9 +12,10 @@ import numpy as np
 import os
 import json
 import re
+import shutil
 from pathlib import Path
 from io import BytesIO
-from datetime import datetime
+from datetime import datetime, time as dtime
 
 # ═══════════════════════════════════════════════════════════════
 # 1. CONSTANTS & CONFIGURATION
@@ -22,14 +23,15 @@ from datetime import datetime
 
 DATA_DIR = Path("data")
 ENGINE_FILE = DATA_DIR / "engine_stock.json"
+BOM_FILE = DATA_DIR / "bom_master.json"
+RESET_STATE_FILE = DATA_DIR / "last_reset.json"
+BOM_SOURCE_FILE = Path("d:/TML PPC Dashboard/Bom details.xlsx")
 
-WORKBOOK_NAMES = [
-    "TCF VIN  & Paint Float mapping data.xlsx",
-    "TCF VIN  & Paint Float mapping data-1.xlsx",
-]
+# Daily reset happens at 06:30 local time
+RESET_HOUR = 6
+RESET_MINUTE = 30
 
 RAW_FILE_TYPES = [
-    "Master Mapping Data",
     "Paint Float",
     "TCF1 Wiring File",
     "TCF2 Wiring File",
@@ -42,7 +44,7 @@ RAW_FILE_TYPES = [
 
 MODEL_MAP = {
     "5497": ("PUNCH", "TCF1"),
-    "5468": ("PUNCH.EV / NOVA", "TCF1"),
+    "5468": ("PUNCH.EV", "TCF1"),
     "5473": ("HARRIER.EV", "TCF2"),
     "5466": ("SAFARI", "TCF2"),
     "5479": ("SAFARI", "TCF2"),
@@ -52,6 +54,7 @@ MODEL_MAP = {
     "5604": ("HARRIER", "TCF2"),
     "5483": ("SAFARI.EV", "TCF2"),
 }
+
 
 ENGINE_MASTER = [
     {"LINE": "TCF1", "Engine Part No": "54850000PTP001", "Model": "Punch MT SA", "TA Code": "3302"},
@@ -128,6 +131,25 @@ footer { display: none; }
     border-bottom: 2px solid #e2e8f0;
     padding-bottom: 8px;
 }
+
+/* Responsive adjustments for mobile viewports */
+@media (max-width: 768px) {
+    .dash-header {
+        padding: 16px 20px !important;
+        border-radius: 12px !important;
+        margin-bottom: 16px !important;
+    }
+    .dash-header h1 {
+        font-size: 1.5rem !important;
+    }
+    .dash-header p {
+        font-size: 0.95rem !important;
+    }
+    .section-title {
+        font-size: 1.1rem !important;
+        margin: 16px 0 8px 0 !important;
+    }
+}
 </style>
 """
 
@@ -140,19 +162,6 @@ footer { display: none; }
 def _safe(ft: str) -> str:
     """Convert file type name to a safe filename slug."""
     return ft.replace(" ", "_").lower()
-
-
-def find_workbook() -> Path | None:
-    """Find the main Excel workbook in the project folder."""
-    custom_master = DATA_DIR / f"{_safe('Master Mapping Data')}.xlsx"
-    if custom_master.exists():
-        return custom_master
-        
-    for name in WORKBOOK_NAMES:
-        p = Path(name)
-        if p.exists():
-            return p
-    return None
 
 
 def strip_df(df: pd.DataFrame) -> pd.DataFrame:
@@ -171,43 +180,387 @@ def save_upload(uploaded_file, file_type: str) -> Path:
     target = DATA_DIR / f"{_safe(file_type)}{ext}"
     with open(target, "wb") as f:
         f.write(uploaded_file.getbuffer())
+    # Save upload timestamp metadata
+    _save_file_meta(file_type, uploaded_file.name)
     return target
 
 
-def get_source(file_type: str, wb_path: Path | None):
-    """Return (source_type, path) — 'uploaded' or 'workbook' or 'scanned'."""
+def _get_meta_path() -> Path:
+    """Return path to file metadata JSON."""
+    return DATA_DIR / "file_meta.json"
+
+
+def _load_file_meta() -> dict:
+    """Load file metadata (upload times, original names)."""
+    p = _get_meta_path()
+    if p.exists():
+        try:
+            with open(p) as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+
+def _save_file_meta(file_type: str, original_name: str):
+    """Save upload timestamp and original filename for a file type."""
+    DATA_DIR.mkdir(exist_ok=True)
+    meta = _load_file_meta()
+    meta[file_type] = {
+        "uploaded_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "original_name": original_name,
+    }
+    with open(_get_meta_path(), "w") as f:
+        json.dump(meta, f, indent=2)
+
+
+# ═══════════════════════════════════════════════════════════════
+# DAILY 6:30 AM RESET LOGIC
+# ═══════════════════════════════════════════════════════════════
+
+def _get_last_reset() -> str | None:
+    """Return last recorded reset date string (YYYY-MM-DD), or None."""
+    if RESET_STATE_FILE.exists():
+        try:
+            with open(RESET_STATE_FILE) as f:
+                data = json.load(f)
+                return data.get("last_reset_date")
+        except Exception:
+            pass
+    return None
+
+
+def _save_last_reset(date_str: str):
+    """Persist the date of the last reset."""
+    DATA_DIR.mkdir(exist_ok=True)
+    with open(RESET_STATE_FILE, "w") as f:
+        json.dump({"last_reset_date": date_str, "reset_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}, f, indent=2)
+
+
+def check_and_perform_daily_reset():
+    """
+    If current local time is past 06:30 and we have not yet reset today,
+    delete all uploaded data files and the engine stock JSON.
+    This ensures a clean slate for each morning shift.
+    """
+    now = datetime.now()
+    today_str = now.strftime("%Y-%m-%d")
+    last_reset = _get_last_reset()
+
+    # Only reset if it's past 06:30 today AND we haven't already reset today
+    reset_time_today = now.replace(hour=RESET_HOUR, minute=RESET_MINUTE, second=0, microsecond=0)
+    if now >= reset_time_today and last_reset != today_str:
+        _perform_reset()
+        _save_last_reset(today_str)
+        return True  # Reset was performed
+    return False  # No reset needed
+
+
+def _perform_reset():
+    """Delete all uploaded data files, engine stock JSON, and file metadata."""
+    DATA_DIR.mkdir(exist_ok=True)
+    deleted = []
+    # Delete all uploaded excel files
+    for ext in ["*.xlsx", "*.xlsb", "*.xls"]:
+        for f in DATA_DIR.glob(ext):
+            try:
+                f.unlink()
+                deleted.append(f.name)
+            except Exception:
+                pass
+    # Reset engine stock
+    if ENGINE_FILE.exists():
+        try:
+            ENGINE_FILE.unlink()
+            deleted.append(ENGINE_FILE.name)
+        except Exception:
+            pass
+    # Reset BOM cache
+    if BOM_FILE.exists():
+        try:
+            BOM_FILE.unlink()
+            deleted.append(BOM_FILE.name)
+        except Exception:
+            pass
+    # Reset file metadata
+    meta_path = _get_meta_path()
+    if meta_path.exists():
+        try:
+            meta_path.unlink()
+        except Exception:
+            pass
+    # Clear Streamlit cache so fresh data is loaded
+    st.cache_data.clear()
+
+
+# ═══════════════════════════════════════════════════════════════
+# BOM MASTER DATA
+# ═══════════════════════════════════════════════════════════════
+
+def load_bom_master() -> pd.DataFrame:
+    """
+    Load BOM (Bill of Materials) master data from Bom details.xlsx.
+    Searches recursively in the project root and subdirectories (like Project).
+    Also supports fallback to 'Part Number Master' sheet of consolidated TCF workbook.
+    Saves a JSON cache in data/ for quick reload.
+    Returns a DataFrame with columns: SHORT_VC, FRONT_WIRING, COCKPIT, ENGINE.
+    """
+    # Find BOM file in root or Project recursively
+    bom_path = Path("Bom details.xlsx")
+    if not bom_path.exists():
+        # Search recursively
+        root_dir = Path("d:/TML PPC Dashboard")
+        matches = [f for f in root_dir.rglob("Bom details.xlsx") if "data" not in f.parts and "test_runs" not in f.parts]
+        if matches:
+            bom_path = max(matches, key=os.path.getmtime)
+
+    # Try loading from BOM source file directly
+    if bom_path.exists():
+        try:
+            df = pd.read_excel(str(bom_path))
+            df.columns = [str(c).strip() for c in df.columns]
+            # Normalise column names
+            rename = {}
+            for c in df.columns:
+                cu = c.upper().strip()
+                if "SHORT" in cu and "VEHICLE" in cu:
+                    rename[c] = "SHORT_VC"
+                elif "FRONT" in cu and "WIRING" in cu:
+                    rename[c] = "FRONT_WIRING"
+                elif "COCKPIT" in cu:
+                    rename[c] = "COCKPIT"
+                elif "ENGINE" in cu:
+                    rename[c] = "ENGINE"
+            df.rename(columns=rename, inplace=True)
+            needed = ["SHORT_VC", "FRONT_WIRING", "COCKPIT", "ENGINE"]
+            for n in needed:
+                if n not in df.columns:
+                    df[n] = np.nan
+            df = df[needed].copy()
+            # Clean strings
+            for col in df.columns:
+                df[col] = df[col].astype(str).str.strip()
+                df[col] = df[col].replace({"nan": np.nan, "None": np.nan, "": np.nan})
+            df = df.dropna(subset=["SHORT_VC"])
+            # Save to data dir as JSON for record-keeping
+            DATA_DIR.mkdir(exist_ok=True)
+            records = df.fillna("").to_dict("records")
+            with open(BOM_FILE, "w") as f:
+                json.dump({
+                    "source": str(bom_path),
+                    "loaded_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "row_count": len(df),
+                    "data": records
+                }, f, indent=2)
+            return df
+        except Exception as e:
+            pass  # Fall through to consolidated or cache
+
+    # Fallback to consolidated TCF workbook Part Number Master sheet
+    root_dir = Path("d:/TML PPC Dashboard")
+    matches = [f for f in root_dir.rglob("*.xlsx") if "TCF VIN" in f.name.upper() and "FLOAT" in f.name.upper() and "MAPPING" in f.name.upper()]
+    if matches:
+        con_path = max(matches, key=os.path.getmtime)
+        try:
+            df = pd.read_excel(str(con_path), sheet_name="Part Number Master")
+            df.columns = [str(c).strip() for c in df.columns]
+            rename = {}
+            for c in df.columns:
+                cu = c.upper().strip()
+                if "SHORT" in cu and "VEHICLE" in cu:
+                    rename[c] = "SHORT_VC"
+                elif "FRONT" in cu and "WIRING" in cu:
+                    rename[c] = "FRONT_WIRING"
+                elif "COCKPIT" in cu:
+                    rename[c] = "COCKPIT"
+                elif "ENGINE" in cu:
+                    rename[c] = "ENGINE"
+            df.rename(columns=rename, inplace=True)
+            needed = ["SHORT_VC", "FRONT_WIRING", "COCKPIT", "ENGINE"]
+            for n in needed:
+                if n not in df.columns:
+                    df[n] = np.nan
+            df = df[needed].copy()
+            for col in df.columns:
+                df[col] = df[col].astype(str).str.strip()
+                df[col] = df[col].replace({"nan": np.nan, "None": np.nan, "": np.nan})
+            df = df.dropna(subset=["SHORT_VC"])
+            DATA_DIR.mkdir(exist_ok=True)
+            records = df.fillna("").to_dict("records")
+            with open(BOM_FILE, "w") as f:
+                json.dump({
+                    "source": str(con_path),
+                    "loaded_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "row_count": len(df),
+                    "data": records
+                }, f, indent=2)
+            return df
+        except Exception:
+            pass
+
+    # Fallback: load from cached JSON
+    if BOM_FILE.exists():
+        try:
+            with open(BOM_FILE) as f:
+                cached = json.load(f)
+            df = pd.DataFrame(cached.get("data", []))
+            if not df.empty:
+                return df
+        except Exception:
+            pass
+
+    return pd.DataFrame(columns=["SHORT_VC", "FRONT_WIRING", "COCKPIT", "ENGINE"])
+
+
+def get_bom_info() -> dict:
+    """Return metadata about the loaded BOM file."""
+    if BOM_FILE.exists():
+        try:
+            with open(BOM_FILE) as f:
+                cached = json.load(f)
+            return {
+                "loaded_at": cached.get("loaded_at", "Unknown"),
+                "row_count": cached.get("row_count", 0),
+                "source": Path(cached.get("source", "Unknown")).name,
+            }
+        except Exception:
+            pass
+    # Try finding the source file dynamically to show its metadata
+    bom_path = Path("Bom details.xlsx")
+    if not bom_path.exists():
+        root_dir = Path("d:/TML PPC Dashboard")
+        matches = [f for f in root_dir.rglob("Bom details.xlsx") if "data" not in f.parts and "test_runs" not in f.parts]
+        if matches:
+            bom_path = max(matches, key=os.path.getmtime)
+    if bom_path.exists():
+        mtime = datetime.fromtimestamp(os.path.getmtime(bom_path))
+        return {
+            "loaded_at": mtime.strftime("%Y-%m-%d %H:%M:%S"),
+            "row_count": 0,
+            "source": bom_path.name,
+        }
+    return {}
+
+
+
+def get_source(file_type: str):
+    """Return (source_type, path) — 'uploaded' or 'scanned' or (None, None).
+    Recursively searches project directory (including Project folder) and
+    falls back to a consolidated workbook sheet if individual files aren't newer/found.
+    """
+    # Check for manually uploaded file first
     for ext in [".xlsb", ".xlsx", ".xls"]:
         up = DATA_DIR / f"{_safe(file_type)}{ext}"
         if up.exists():
             return "uploaded", up
 
-    # Scan root directory for matching prefix
-    prefix_map = {
-        "Paint Float": "PPC_Float_Report",
-        "TCF1 DPT Plan": "DPT_PLAN-VIN_GENERATION_REPORT",
-        "TCF2 DPT Plan": "TCF2_DPT-PLAN_VIN_GENERATION_REPORT",
-        "TCF1 Cockpit": "TCF1_Cockpit",
-        "TCF2 Cockpit": "Harrier safari cockpit",
-        "Nova Cockpit": "Nova_Cockpit",
-        "TCF1 Wiring File": "Wiring Harness report NEW",
-        "TCF2 Wiring File": "TCF2_Wiring"
-    }
-    prefix = prefix_map.get(file_type)
-    if prefix:
-        root_dir = Path("d:/TML PPC Dashboard")
-        matches = [f for f in root_dir.glob("*.*") if f.name.upper().startswith(prefix.upper()) and f.suffix.lower() in [".xls", ".xlsx", ".xlsb"]]
-        if matches:
-            latest = max(matches, key=os.path.getmtime)
-            return "scanned", latest
+    # Recursively find all Excel files in the workspace (excluding cache/test/git dirs)
+    root_dir = Path("d:/TML PPC Dashboard")
+    all_files = []
+    if root_dir.exists():
+        for ext in ["*.xls", "*.xlsx", "*.xlsb"]:
+            for f in root_dir.rglob(ext):
+                path_parts = f.parts
+                if "data" in path_parts or "test_runs" in path_parts or ".git" in path_parts or "__pycache__" in path_parts:
+                    continue
+                all_files.append(f)
 
-    if wb_path and wb_path.exists():
-        return "workbook", wb_path
+    # Keywords/patterns to match individual files by file_type
+    patterns = {
+        "Paint Float": [r"PPC_Float_Report", r"Paint float report", r"Paint Float"],
+        "TCF1 DPT Plan": [r"DPT_PLAN-VIN_GENERATION_REPORT", r"TCF 1 DPT plan", r"TCF1_DPT", r"TCF1 DPT"],
+        "TCF2 DPT Plan": [r"TCF2_DPT-PLAN", r"TCF2_DPT-PLAN_VIN_GENERATION_REPORT", r"TCF2 DPT", r"TCF 2 DPT"],
+        "TCF1 Cockpit": [r"TCF1_Cockpit", r"TCF 1 COCKPIT", r"TCF1 Cockpit"],
+        "TCF2 Cockpit": [r"Harrier safari cockpit", r"TCF 2 cockpit", r"TCF2 Cockpit"],
+        "Nova Cockpit": [r"Nova_Cockpit", r"Nova"],
+        "TCF1 Wiring File": [r"Wiring Harness report NEW", r"TCF 1 Wiring", r"TCF 1 Wiring Harness", r"TCF1 Wiring"],
+        "TCF2 Wiring File": [r"TCF2_Wiring", r"TCF-2 Wiring", r"TCF-2 Wiring Harness", r"TCF2 Wiring"]
+    }
+
+    if file_type in patterns:
+        individual_candidates = []
+        consolidated_candidates = []
+        for f in all_files:
+            name = f.name.upper()
+            is_consolidated = ("TCF VIN" in name and "FLOAT" in name and "MAPPING" in name)
+            if is_consolidated:
+                consolidated_candidates.append((f, os.path.getmtime(f)))
+                continue
+            
+            matched = False
+            for pat in patterns[file_type]:
+                if re.search(pat.upper(), name):
+                    matched = True
+                    break
+            if matched:
+                individual_candidates.append((f, os.path.getmtime(f)))
+
+        # Prefer individual files if found, otherwise fall back to consolidated
+        if individual_candidates:
+            individual_candidates.sort(key=lambda x: x[1], reverse=True)
+            return "scanned", individual_candidates[0][0]
+        elif consolidated_candidates:
+            consolidated_candidates.sort(key=lambda x: x[1], reverse=True)
+            return "scanned", consolidated_candidates[0][0]
+
     return None, None
 
 
+def _is_html_xls(path) -> bool:
+    """Detect if a file is an HTML table disguised with an .xls/.xlsx extension."""
+    try:
+        with open(path, "rb") as f:
+            header = f.read(16)
+        # HTML files start with '<' or BOM+<
+        return header.lstrip(b"\xef\xbb\xbf").lstrip().startswith(b"<")
+    except Exception:
+        return False
+
+
+def _read_html_table_bs4(path) -> pd.DataFrame:
+    """
+    Parse an HTML file using BeautifulSoup.
+    Handles invalid colspan=0 / rowspan=0 attributes that break pd.read_html.
+    Returns a DataFrame with the first table's data.
+    """
+    from bs4 import BeautifulSoup
+    with open(path, "rb") as f:
+        raw = f.read().decode("utf-8", errors="replace")
+    soup = BeautifulSoup(raw, "html.parser")
+    table = soup.find("table")
+    if table is None:
+        return pd.DataFrame()
+    rows = table.find_all("tr")
+    all_rows = []
+    for r in rows:
+        cells = [td.get_text(strip=True) for td in r.find_all(["td", "th"])]
+        all_rows.append(cells)
+    if not all_rows:
+        return pd.DataFrame()
+    # Normalize row lengths
+    max_cols = max(len(r) for r in all_rows)
+    for r in all_rows:
+        while len(r) < max_cols:
+            r.append("")
+    return pd.DataFrame(all_rows)
+
+
 def read_sheet(src_type, src_path, sheet_name, **kw):
-    """Read a sheet from an uploaded file (sheet 0) or the workbook."""
-    engine = "pyxlsb" if str(src_path).lower().endswith(".xlsb") else None
+    """
+    Read a sheet from an uploaded/scanned file.
+
+    Handles three formats transparently:
+      - .xlsb        → pyxlsb engine
+      - .xls/.xlsx   → openpyxl / xlrd
+      - HTML-as-XLS  → BeautifulSoup fallback (web-exported reports)
+    """
+    src_path_str = str(src_path)
+
+    # HTML-disguised file? (web report saved as .xls)
+    if _is_html_xls(src_path_str):
+        return _read_html_table_bs4(src_path_str)
+
+    engine = "pyxlsb" if src_path_str.lower().endswith(".xlsb") else None
     if src_type in ["uploaded", "scanned"]:
         try:
             return pd.read_excel(src_path, sheet_name=sheet_name, engine=engine, **kw)
@@ -224,10 +577,13 @@ def to_excel(df_or_styler, sheet="Summary", table_type="generic") -> bytes:
 
     buf = BytesIO()
     is_styler = hasattr(df_or_styler, "to_excel") and hasattr(df_or_styler, "data")
-    
+    df = df_or_styler.data.copy() if is_styler else df_or_styler.copy()
+
+    # Drop Today VIN from wiring and cockpit outputs to match the user shortage report image
+    if table_type in ["wiring", "cockpit"]:
+        df = df.drop(columns=["Today VIN"], errors="ignore")
+
     with pd.ExcelWriter(buf, engine="openpyxl") as w:
-        df = df_or_styler.data if is_styler else df_or_styler
-        
         thin = Side(border_style="thin", color="000000")
         border = Border(top=thin, left=thin, right=thin, bottom=thin)
         center_align = Alignment(horizontal="center", vertical="center", wrap_text=True)
@@ -313,11 +669,13 @@ def to_excel(df_or_styler, sheet="Summary", table_type="generic") -> bytes:
 
         else:
             # Generic / Wiring formatting
-            df_or_styler.to_excel(w, index=False, sheet_name=sheet)
+            df.to_excel(w, index=False, sheet_name=sheet)
             ws = w.sheets[sheet]
             orange_fill = PatternFill(start_color="F4B084", end_color="F4B084", fill_type="solid")
             blue_fill = PatternFill(start_color="9BC2E6", end_color="9BC2E6", fill_type="solid")
             generic_fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
+            red_fill = PatternFill(start_color="FDE2E2", end_color="FDE2E2", fill_type="solid")
+            red_font = Font(color="991B1B", bold=True)
 
             for i, col_name in enumerate(df.columns):
                 col_idx = i + 1
@@ -336,8 +694,19 @@ def to_excel(df_or_styler, sheet="Summary", table_type="generic") -> bytes:
                     
                 max_len = len(str(col_name))
                 for row in range(2, len(df) + 2):
-                    val = str(ws.cell(row=row, column=col_idx).value or "")
+                    cell_val = ws.cell(row=row, column=col_idx)
+                    val = str(cell_val.value or "")
                     if len(val) > max_len: max_len = len(val)
+                    
+                    # Highlight negative shortages
+                    if table_type in ["wiring", "cockpit", "generic"] and ("Shortage" in str(col_name) or "With respect to" in str(col_name)):
+                        try:
+                            num_val = float(cell_val.value)
+                            if num_val < 0:
+                                cell_val.fill = red_fill
+                                cell_val.font = red_font
+                        except (ValueError, TypeError):
+                            pass
                 ws.column_dimensions[col_letter].width = min(max_len + 3, 30)
 
             for row in range(2, len(df) + 2):
@@ -374,31 +743,10 @@ def is_valid_vc(val) -> bool:
 # 4. PARSING FUNCTIONS
 # ═══════════════════════════════════════════════════════════════
 
-@st.cache_data(show_spinner="Loading Part Number Master…")
-def load_part_master(_wb_path_str: str) -> pd.DataFrame:
-    """Load the Part Number Master sheet from the main workbook."""
-    df = pd.read_excel(_wb_path_str, sheet_name="Part Number Master")
-    df = strip_df(df)
-    # Normalise column names
-    rename = {}
-    for c in df.columns:
-        cu = c.upper()
-        if "SR" in cu and "NO" in cu:
-            rename[c] = "SR_NO"
-        elif "SHORT" in cu and "VEH" in cu:
-            rename[c] = "SHORT_VC"
-        elif "WIRING" in cu or "FRONT" in cu:
-            rename[c] = "FRONT_WIRING"
-        elif "COCKPIT" in cu:
-            rename[c] = "COCKPIT"
-        elif "ENGINE" in cu:
-            rename[c] = "ENGINE"
-    df.rename(columns=rename, inplace=True)
-    needed = ["SHORT_VC", "FRONT_WIRING", "COCKPIT", "ENGINE"]
-    for n in needed:
-        if n not in df.columns:
-            df[n] = np.nan
-    return df[needed].drop_duplicates(subset="SHORT_VC")
+@st.cache_data(show_spinner="Loading BOM Master…")
+def load_bom_master_cached() -> pd.DataFrame:
+    """Cached wrapper for BOM master load."""
+    return load_bom_master()
 
 
 def _find_header_row(df_raw, keywords, max_scan=15):
@@ -475,18 +823,74 @@ def parse_paint_float(src_type, src_path, pm_df=None) -> pd.DataFrame:
 
 
 def parse_dpt_plan(src_type, src_path, sheet_name, line_label) -> pd.DataFrame:
-    """Parse a DPT Plan sheet (clean header row 0).
-    Returns: VC, PLAN, TODAY_VIN, WIRING, COCKPIT, ENGINE, FOR_MODEL, LINE
+    """Parse a DPT Plan VIN Generation Report.
+
+    Supports both real .xlsb files and HTML-as-.xls exports from web portals.
+    HTML files use invalid colspan/rowspan=0 that breaks pd.read_html — we use
+    BeautifulSoup directly instead.
+
+    Returns columns: SHORT_VC, SALES_DESC, DPT_PLAN, DPT_VIN, WIRING, COCKPIT, ENGINE, FOR_MODEL, LINE
     """
+    src_path_str = str(src_path)
+
+    # ── HTML-based DPT file (web export) ──
+    if _is_html_xls(src_path_str):
+        raw_df = _read_html_table_bs4(src_path_str)
+        if raw_df.empty:
+            return pd.DataFrame(columns=["SHORT_VC","SALES_DESC","DPT_PLAN","DPT_VIN","WIRING","COCKPIT","ENGINE","FOR_MODEL","LINE"])
+
+        # First row is header
+        header = [str(v).strip() for v in raw_df.iloc[0]]
+        data = raw_df.iloc[1:].copy().reset_index(drop=True)
+        data.columns = range(len(data.columns))
+
+        # Map column indices from header
+        def _col_idx(keywords):
+            for kw in keywords:
+                for i, h in enumerate(header):
+                    if kw.upper() in h.upper():
+                        return i
+            return None
+
+        vc_col   = _col_idx(["VC"])
+        desc_col = _col_idx(["SALES DESC", "SALES"])
+        plan_col = _col_idx(["PLAN", "TCF/-Plan", "TCF2-Plan"])
+        vin_col  = _col_idx(["VIN", "TCF/-VIN", "TCF2-VIN"])
+
+        result_rows = []
+        for _, row in data.iterrows():
+            vc = str(row.iloc[vc_col]).strip() if vc_col is not None and vc_col < len(row) else ""
+            desc = str(row.iloc[desc_col]).strip() if desc_col is not None and desc_col < len(row) else ""
+            plan_val = row.iloc[plan_col] if plan_col is not None and plan_col < len(row) else 0
+            vin_val  = row.iloc[vin_col]  if vin_col is not None  and vin_col  < len(row) else 0
+
+            # Skip header repeats, totals, empty rows
+            if not vc or vc.upper() in ("VC", "TOTAL", "GRAND TOTAL", ""):
+                continue
+
+            result_rows.append({
+                "SHORT_VC":   vc,
+                "SALES_DESC": desc,
+                "DPT_PLAN":   int(pd.to_numeric(plan_val, errors="coerce") or 0),
+                "DPT_VIN":    int(pd.to_numeric(vin_val,  errors="coerce") or 0),
+                "WIRING":     "",
+                "COCKPIT":    "",
+                "ENGINE":     "",
+                "FOR_MODEL":  "",
+                "LINE":       line_label,
+            })
+
+        return pd.DataFrame(result_rows) if result_rows else pd.DataFrame(
+            columns=["SHORT_VC","SALES_DESC","DPT_PLAN","DPT_VIN","WIRING","COCKPIT","ENGINE","FOR_MODEL","LINE"])
+
+    # ── Normal Excel / .xlsb file ──
     df = read_sheet(src_type, src_path, sheet_name, header=None)
 
-    # DPT Plan has headers at row 0: MARKET, ProductFamily, VC, SALES DESC,
-    # TCF/-Plan, TCF/-VIN, WIRING, Cockpit, Engine, For Model
     h = _find_header_row(df, ["MARKET", "PRODUCTFAMILY", "VC", "SALES"])
     if h is None:
         h = 0
 
-    data = df.iloc[h + 1 :].copy().reset_index(drop=True)
+    data = df.iloc[h + 1:].copy().reset_index(drop=True)
     while len(data.columns) < 10:
         data[len(data.columns)] = np.nan
     data = data.iloc[:, :10]
@@ -494,21 +898,18 @@ def parse_dpt_plan(src_type, src_path, sheet_name, line_label) -> pd.DataFrame:
         "MARKET", "PRODUCT_FAMILY", "SHORT_VC", "SALES_DESC",
         "DPT_PLAN", "DPT_VIN", "C6", "C7", "C8", "C9"
     ]
-    
-    # We will rename C6..C9 back to generic empty if we don't need them
-    # But for compatibility, let's ensure we return WIRING, COCKPIT, ENGINE, FOR_MODEL as empty
-    data["WIRING"] = ""
-    data["COCKPIT"] = ""
-    data["ENGINE"] = ""
+    data["WIRING"]    = ""
+    data["COCKPIT"]   = ""
+    data["ENGINE"]    = ""
     data["FOR_MODEL"] = ""
-    
+
     for col in data.columns:
         if data[col].dtype == "object":
             data[col] = data[col].astype(str).str.strip()
             data[col] = data[col].replace({"nan": np.nan, "None": np.nan, "": np.nan})
 
     data["DPT_PLAN"] = pd.to_numeric(data["DPT_PLAN"], errors="coerce").fillna(0).astype(int)
-    data["DPT_VIN"] = pd.to_numeric(data["DPT_VIN"], errors="coerce").fillna(0).astype(int)
+    data["DPT_VIN"]  = pd.to_numeric(data["DPT_VIN"],  errors="coerce").fillna(0).astype(int)
     data = data[data["SHORT_VC"].notna() & (data["SHORT_VC"] != "")].reset_index(drop=True)
     data["LINE"] = line_label
     return data
@@ -722,22 +1123,14 @@ def compute_model_wise_float(paint_df: pd.DataFrame, dpt_plans: pd.DataFrame | N
 
     if dpt_plans is not None and not dpt_plans.empty:
         dpt = dpt_plans.copy()
-        def map_dpt_model(desc):
-            desc = str(desc).strip().upper()
-            if "NEXON" in desc: return pd.Series(["NEXON", "TCF1"])
-            if "PUNCH" in desc: return pd.Series(["PUNCH", "TCF1"])
-            if "HARRIER" in desc: return pd.Series(["HARRIER", "TCF2"])
-            if "SAFARI" in desc: return pd.Series(["SAFARI", "TCF2"])
-            if "TIAGO" in desc: return pd.Series(["TIAGO", "TCF2"])
-            if "TIGOR" in desc: return pd.Series(["TIGOR", "TCF2"])
-            if "ALTROZ" in desc: return pd.Series(["ALTROZ", "TCF2"])
+        def classify_dpt_vc(vc):
+            vc_str = str(vc).strip()[:4]
+            for k, (mod, ln) in MODEL_MAP.items():
+                if vc_str.startswith(k[:4]):
+                    return pd.Series([mod, ln])
             return pd.Series(["OTHER", "UNKNOWN"])
         
-        # Guard against missing column
-        if "SALES_DESC" not in dpt.columns:
-            dpt["SALES_DESC"] = ""
-            
-        dpt[["MODEL_DPT", "LINE_DPT"]] = dpt["SALES_DESC"].apply(map_dpt_model)
+        dpt[["MODEL_DPT", "LINE_DPT"]] = dpt["SHORT_VC"].apply(classify_dpt_vc)
         today_vin_df = dpt.groupby(["LINE_DPT", "MODEL_DPT"], as_index=False)["DPT_VIN"].sum().rename(columns={"LINE_DPT": "LINE", "MODEL_DPT": "MODEL", "DPT_VIN": "TODAY_VIN"})
         summary = summary.merge(today_vin_df, on=["LINE", "MODEL"], how="left")
     else:
@@ -884,9 +1277,9 @@ def compute_wiring_summary(
     summary.drop(columns=["TODAY_VIN_W"], inplace=True, errors="ignore")
 
     # ── 5. Compute shortage ──
-    summary["SHORTAGE_PBS"] = summary["CLEARANCE"] - summary["PBS_FLOAT"]
-    summary["SHORTAGE_SEALANT"] = summary["CLEARANCE"] - summary["CABS_FLOAT_UPTO_SEALANT"]
-    summary["SHORTAGE_TOTAL"] = summary["CLEARANCE"] - summary["PAINT_TOTAL_FLOAT"]
+    summary["SHORTAGE_PBS"] = summary["CLEARANCE"] - summary["TODAY_VIN"] - summary["PBS_FLOAT"]
+    summary["SHORTAGE_SEALANT"] = summary["CLEARANCE"] - summary["TODAY_VIN"] - summary["CABS_FLOAT_UPTO_SEALANT"]
+    summary["SHORTAGE_TOTAL"] = summary["CLEARANCE"] - summary["TODAY_VIN"] - summary["PAINT_TOTAL_FLOAT"]
 
     # Filter by line
     if line_filter != "All Lines":
@@ -899,13 +1292,16 @@ def compute_wiring_summary(
         "WIRING_PART_NUMBER": "Wiring Part Number",
         "LINE": "Model/Line",
         "CLEARANCE": "Clearance After 6:30AM",
+        "TODAY_VIN": "Today VIN",
         "PAINT_TOTAL_FLOAT": "Paint TOTAL FLOAT",
         "PBS_FLOAT": "PBS FLOAT",
         "CABS_FLOAT_UPTO_SEALANT": "Cabs FloatUPTO SEALANT",
         "SHORTAGE_PBS": "Shortage PBS FLOAT",
         "SHORTAGE_SEALANT": "Shortage Upto Sealant",
         "SHORTAGE_TOTAL": "Shortage for TOTAL FLOAT",
-    })[["Wiring Part Number", "Model/Line", "Clearance After 6:30AM", "Paint TOTAL FLOAT", "PBS FLOAT", "Cabs FloatUPTO SEALANT", "Shortage PBS FLOAT", "Shortage Upto Sealant", "Shortage for TOTAL FLOAT"]]
+    })[["Wiring Part Number", "Model/Line", "Clearance After 6:30AM", "Today VIN",
+        "Paint TOTAL FLOAT", "PBS FLOAT", "Cabs FloatUPTO SEALANT",
+        "Shortage PBS FLOAT", "Shortage Upto Sealant", "Shortage for TOTAL FLOAT"]]
 
 
 def compute_cockpit_summary(
@@ -985,9 +1381,9 @@ def compute_cockpit_summary(
     req["TODAY_VIN"] = req["COCKPIT"].map(today_vin_map).fillna(cov_today).astype(int)
 
     # ── 5. Shortage ──
-    req["SHORTAGE_PBS"] = req["CLEARANCE"] - req["PBS_FLOAT"]
-    req["SHORTAGE_SEALANT"] = req["CLEARANCE"] - req["CABS_FLOAT_UPTO_SEALANT"]
-    req["SHORTAGE_TOTAL"] = req["CLEARANCE"] - req["PAINT_TOTAL_FLOAT"]
+    req["SHORTAGE_PBS"] = req["CLEARANCE"] - req["TODAY_VIN"] - req["PBS_FLOAT"]
+    req["SHORTAGE_SEALANT"] = req["CLEARANCE"] - req["TODAY_VIN"] - req["CABS_FLOAT_UPTO_SEALANT"]
+    req["SHORTAGE_TOTAL"] = req["CLEARANCE"] - req["TODAY_VIN"] - req["PAINT_TOTAL_FLOAT"]
 
     if line_filter != "All Lines":
         req = req[req["LINE"] == line_filter]
@@ -998,14 +1394,90 @@ def compute_cockpit_summary(
         "COCKPIT": "Cockpit Part Number",
         "LINE": "Model/Line",
         "CLEARANCE": "Clearance After 6:30AM",
+        "TODAY_VIN": "Today VIN",
         "PAINT_TOTAL_FLOAT": "Paint TOTAL FLOAT",
         "PBS_FLOAT": "PBS FLOAT",
         "CABS_FLOAT_UPTO_SEALANT": "Cabs FloatUPTO SEALANT",
         "SHORTAGE_PBS": "Shortage PBS FLOAT",
         "SHORTAGE_SEALANT": "Shortage Upto Sealant",
         "SHORTAGE_TOTAL": "Shortage for TOTAL FLOAT",
-    })[["Cockpit Part Number", "Model/Line", "Clearance After 6:30AM", "Paint TOTAL FLOAT", "PBS FLOAT", "Cabs FloatUPTO SEALANT", "Shortage PBS FLOAT", "Shortage Upto Sealant", "Shortage for TOTAL FLOAT"]]
+    })[["Cockpit Part Number", "Model/Line", "Clearance After 6:30AM", "Today VIN",
+        "Paint TOTAL FLOAT", "PBS FLOAT", "Cabs FloatUPTO SEALANT",
+        "Shortage PBS FLOAT", "Shortage Upto Sealant", "Shortage for TOTAL FLOAT"]]
 
+def compute_vin_vs_float(
+    paint_df: pd.DataFrame,
+    dpt_plans: pd.DataFrame | None,
+    line_filter: str,
+) -> pd.DataFrame:
+    """Consolidated VIN Generation vs Paint Float shortage per Short VC.
+
+    Matches the reference workbook intent: each row is one Short VC showing
+    DPT Plan, Today VIN, all float stages, and shortage columns.
+    """
+    if paint_df.empty:
+        return pd.DataFrame()
+
+    pf = paint_df.copy()
+    if line_filter != "All Lines":
+        pf = pf[pf["LINE"] == line_filter]
+
+    if pf.empty:
+        return pd.DataFrame()
+
+    # Base: one row per Short VC with all float data
+    base = pf[[
+        "SHORT_VC", "SALES_DESCRIPTION", "MODEL", "LINE",
+        "TOTAL_FLOAT", "PBS_FLOAT", "PBS_TO_POLISHING",
+        "POLISHING_TO_TOPCOAT", "TOTAL_UPTO_SEALANT",
+        "BIW_LIFTING_TO_PT", "PT_ENTRY_TO_SEALENT",
+    ]].copy()
+
+    # Merge DPT VIN per Short VC
+    if dpt_plans is not None and not dpt_plans.empty:
+        dpt = dpt_plans[["SHORT_VC", "DPT_PLAN", "DPT_VIN"]].copy()
+        dpt["SHORT_VC"] = dpt["SHORT_VC"].astype(str).str.strip()
+        dpt = dpt.groupby("SHORT_VC", as_index=False).agg(
+            DPT_PLAN=("DPT_PLAN", "sum"),
+            DPT_VIN=("DPT_VIN", "sum"),
+        )
+        base = base.merge(dpt, on="SHORT_VC", how="left")
+    else:
+        base["DPT_PLAN"] = 0
+        base["DPT_VIN"] = 0
+
+    base["DPT_PLAN"] = base["DPT_PLAN"].fillna(0).astype(int)
+    base["DPT_VIN"]  = base["DPT_VIN"].fillna(0).astype(int)
+
+    # Shortage = Today VIN (DPT_VIN) – Float
+    base["Shortage vs PBS Float"]        = base["DPT_VIN"] - base["PBS_FLOAT"]
+    base["Shortage vs Upto Sealant"]     = base["DPT_VIN"] - base["TOTAL_UPTO_SEALANT"]
+    base["Shortage vs TOTAL Float"]      = base["DPT_VIN"] - base["TOTAL_FLOAT"]
+
+    # Sort: worst shortage first, then by model
+    base = base.sort_values(
+        ["Shortage vs TOTAL Float", "MODEL", "SHORT_VC"],
+        ascending=[True, True, True]
+    ).reset_index(drop=True)
+
+    return base.rename(columns={
+        "SHORT_VC":            "Short VC",
+        "SALES_DESCRIPTION":   "Sales Description",
+        "MODEL":               "Model",
+        "LINE":                "Line",
+        "DPT_PLAN":            "DPT Plan",
+        "DPT_VIN":             "Today VIN (DPT)",
+        "TOTAL_FLOAT":         "TOTAL Float",
+        "PBS_FLOAT":           "PBS Float",
+        "PBS_TO_POLISHING":    "PBS→Polishing",
+        "POLISHING_TO_TOPCOAT":"Polishing→Topcoat",
+        "TOTAL_UPTO_SEALANT":  "Upto Sealant",
+        "BIW_LIFTING_TO_PT":   "BIW→PT",
+        "PT_ENTRY_TO_SEALENT": "PT→Sealant",
+    })[["Short VC", "Sales Description", "Model", "Line",
+        "DPT Plan", "Today VIN (DPT)",
+        "TOTAL Float", "PBS Float", "Upto Sealant", "BIW→PT", "PT→Sealant",
+        "Shortage vs PBS Float", "Shortage vs Upto Sealant", "Shortage vs TOTAL Float"]]
 
 def build_engine_table(paint_df: pd.DataFrame, line_filter: str) -> pd.DataFrame:
     """Build engine requirements table combining Paint Float logic with predefined Master list."""
@@ -1162,8 +1634,14 @@ def main():
     )
     st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
-    # Detect workbook
-    wb_path = find_workbook()
+    # ── Daily 6:30 AM Reset ──
+    reset_performed = check_and_perform_daily_reset()
+    if reset_performed:
+        st.toast("🔄 Daily 6:30 AM reset completed — all uploaded data cleared.", icon="🔄")
+        st.rerun()
+
+    now = datetime.now()
+    file_meta = _load_file_meta()
 
     # ═══════════════════════════════════════════
     # SIDEBAR
@@ -1171,17 +1649,6 @@ def main():
     with st.sidebar:
         st.markdown("## 🏭 TCF PPC Dashboard")
         st.caption("Production Planning & Control")
-
-        st.divider()
-
-        # ── Workbook status ──
-        if wb_path:
-            st.success(f"✅ Workbook found: `{wb_path.name}`")
-        else:
-            st.error("❌ Master workbook not found.")
-            st.info(
-                "Please upload the **Master Mapping Data** in the Upload section below."
-            )
 
         st.divider()
 
@@ -1197,108 +1664,81 @@ def main():
             placeholder="e.g. 54680124A or 546854600108",
         )
 
-        st.divider()
 
-        # ── File Upload ──
-        st.markdown("### 📁 Upload Raw Data")
-        file_type = st.selectbox("Select file type", RAW_FILE_TYPES)
-        uploaded = st.file_uploader(
-            f"Upload **{file_type}**",
-            type=["xlsb", "xlsx", "xls"],
-            key=f"upload_{file_type}",
-        )
-        if uploaded is not None:
-            save_upload(uploaded, file_type)
-            st.success(f"✅ **{file_type}** saved successfully!")
-            st.cache_data.clear()
-            st.rerun()
-
-        st.divider()
-
-        # ── File status ──
-        st.markdown("### 📋 File Status")
-        DATA_DIR.mkdir(exist_ok=True)
-        for ft in RAW_FILE_TYPES:
-            fpath = DATA_DIR / f"{_safe(ft)}.xlsx"
-            if fpath.exists():
-                mtime = datetime.fromtimestamp(os.path.getmtime(fpath))
-                age = (datetime.now() - mtime).total_seconds()
-                badge_cls = "upload-badge-ok" if age < 86400 else "upload-badge-old"
-                ts = mtime.strftime("%d-%b %H:%M")
-                st.markdown(
-                    f'<span class="{badge_cls}">● {ft}</span> <small style="color:#64748b">Updated {ts}</small>',
-                    unsafe_allow_html=True,
-                )
-            else:
-                st.markdown(
-                    f'<span class="upload-badge-old">○ {ft}</span> <small style="color:#475569">— using workbook</small>',
-                    unsafe_allow_html=True,
-                )
 
     # ═══════════════════════════════════════════
     # LOAD ALL DATA
     # ═══════════════════════════════════════════
     
-    if not wb_path:
-        st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
-        st.markdown(
-            '<div class="dash-header"><h1>TCF PPC Dashboard</h1>'
-            "<p>Please upload the Master Mapping Data in the sidebar to get started.</p></div>",
-            unsafe_allow_html=True,
-        )
-        return
-
-    # ── Part Number Master (always from workbook) ──
-    pm = load_part_master(str(wb_path))
-
-    # ── Paint Float ──
-    pf_src, pf_path = get_source("Paint Float", wb_path)
-    if pf_src is None:
-        st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
-        st.markdown(
-            '<div class="dash-header"><h1>TCF PPC Dashboard</h1>'
-            "<p>Upload a Paint Float file to get started.</p></div>",
-            unsafe_allow_html=True,
-        )
-        st.error("⚠️  No Paint Float data found. Upload via the sidebar to begin.")
-        st.stop()
-
-    paint_df = parse_paint_float(pf_src, str(pf_path), pm)
-    if paint_df.empty:
-        st.error("Paint Float parsed but contains no valid data rows.")
-        st.stop()
-
-    # ── DPT Plans ──
-    dpt_frames = []
-    for ft, sheet, label in [("TCF1 DPT Plan", "TCF1 DPT Plan", "TCF1"), ("TCF2 DPT Plan", "TCF2 DPT Plan", "TCF2")]:
-        s, p = get_source(ft, wb_path)
-        if s:
-            try:
-                dpt_frames.append(parse_dpt_plan(s, str(p), sheet, label))
-            except Exception:
-                pass
-    dpt_all = pd.concat(dpt_frames, ignore_index=True) if dpt_frames else None
-
-    # ── Wiring Files ──
-    w1_src, w1_path = get_source("TCF1 Wiring File", wb_path)
-    wiring_tcf1 = parse_wiring_tcf1(w1_src, str(w1_path)) if w1_src else None
-
-    w2_src, w2_path = get_source("TCF2 Wiring File", wb_path)
-    wiring_tcf2 = parse_wiring_tcf2(w2_src, str(w2_path)) if w2_src else None
-
-    # ── Cockpit Files ──
+    # ── BOM Master Data (sole source for part mappings) ──
+    bom_df = load_bom_master_cached()
+    bom_loaded = not bom_df.empty
+    paint_loaded = False
+    
+    paint_df = pd.DataFrame()
+    dpt_all = None
+    wiring_tcf1 = None
+    wiring_tcf2 = None
     cockpit_dfs = []
-    for ft, sheet, label in [
-        ("TCF1 Cockpit", "TCF1 Cockpit", "TCF1"),
-        ("TCF2 Cockpit", "TCF2 Cockpit", "TCF2"),
-        ("Nova Cockpit", "Nova Cockpit", "TCF1"),
-    ]:
-        s, p = get_source(ft, wb_path)
-        if s:
-            try:
-                cockpit_dfs.append(parse_cockpit_file(s, str(p), sheet, label))
-            except Exception:
-                pass
+    pm = None
+    missing_bom_vcs = []
+
+    if bom_loaded:
+        # Part master = BOM data directly
+        pm = bom_df.drop_duplicates(subset="SHORT_VC").reset_index(drop=True)
+
+        # ── Paint Float ──
+        pf_src, pf_path = get_source("Paint Float")
+        if pf_src is not None:
+            paint_df = parse_paint_float(pf_src, str(pf_path), pm)
+            if not paint_df.empty:
+                paint_loaded = True
+
+        if paint_loaded:
+            # ── DPT Plans ──
+            dpt_frames = []
+            for ft, sheet, label in [("TCF1 DPT Plan", "TCF1 DPT Plan", "TCF1"), ("TCF2 DPT Plan", "TCF2 DPT Plan", "TCF2")]:
+                s, p = get_source(ft)
+                if s:
+                    try:
+                        dpt_frames.append(parse_dpt_plan(s, str(p), sheet, label))
+                    except Exception:
+                        pass
+            dpt_all = pd.concat(dpt_frames, ignore_index=True) if dpt_frames else None
+            if dpt_all is not None and not dpt_all.empty:
+                # Map WIRING, COCKPIT, and ENGINE columns from Part Master (pm)
+                dpt_all.drop(columns=["WIRING", "COCKPIT", "ENGINE"], inplace=True, errors="ignore")
+                pm_map = pm[["SHORT_VC", "FRONT_WIRING", "COCKPIT", "ENGINE"]].rename(columns={"FRONT_WIRING": "WIRING"})
+                dpt_all = dpt_all.merge(pm_map, on="SHORT_VC", how="left")
+
+            # ── Wiring Files ──
+            w1_src, w1_path = get_source("TCF1 Wiring File")
+            wiring_tcf1 = parse_wiring_tcf1(w1_src, str(w1_path)) if w1_src else None
+
+            w2_src, w2_path = get_source("TCF2 Wiring File")
+            wiring_tcf2 = parse_wiring_tcf2(w2_src, str(w2_path)) if w2_src else None
+
+            # ── Cockpit Files ──
+            for ft, sheet, label in [
+                ("TCF1 Cockpit", "TCF1 Cockpit", "TCF1"),
+                ("TCF2 Cockpit", "TCF2 Cockpit", "TCF2"),
+                ("Nova Cockpit", "Nova Cockpit", "TCF1"),
+            ]:
+                s, p = get_source(ft)
+                if s:
+                    try:
+                        cockpit_dfs.append(parse_cockpit_file(s, str(p), sheet, label))
+                    except Exception:
+                        pass
+
+            # Compute BOM mapping integrity issues
+            bom_vcs = set(bom_df["SHORT_VC"].dropna().astype(str).str.strip().unique())
+            active_vcs = set()
+            if paint_loaded and not paint_df.empty:
+                active_vcs.update(paint_df["SHORT_VC"].dropna().astype(str).str.strip().unique())
+            if dpt_all is not None and not dpt_all.empty:
+                active_vcs.update(dpt_all["SHORT_VC"].dropna().astype(str).str.strip().unique())
+            missing_bom_vcs = sorted(list(active_vcs - bom_vcs))
 
     # ═══════════════════════════════════════════
     # HEADER
@@ -1314,25 +1754,32 @@ def main():
 
     # ── Global Lookup ──
     if lookup:
-        lookup_u = lookup.strip().upper()
-        mask = paint_df.apply(lambda row: any(lookup_u in str(v).upper() for v in row), axis=1)
-        hits = mask.sum()
-        if hits > 0:
-            st.info(f"🔍 **{hits}** variant(s) matched for `{lookup}`")
-            match_df = paint_df[mask][["SHORT_VC", "SALES_DESCRIPTION", "MODEL", "LINE", "WIRING_PART_NUMBER", "COCKPIT", "ENGINE"] + FLOAT_COLS]
-            match_df = match_df.rename(columns={"SHORT_VC": "Short VC", "SALES_DESCRIPTION": "Description", "WIRING_PART_NUMBER": "Wiring Part", "MODEL": "Model", "LINE": "Line"})
-            st.dataframe(match_df, use_container_width=True, hide_index=True)
+        if not bom_loaded:
+            st.error("⚠️ **BOM details.xlsx** is not loaded. Cannot perform global search.")
+        elif not paint_loaded:
+            st.error("⚠️ **Paint Float** is not loaded. Cannot perform global search.")
         else:
-            st.warning(f"No matches found for `{lookup}`")
+            lookup_u = lookup.strip().upper()
+            mask = paint_df.apply(lambda row: any(lookup_u in str(v).upper() for v in row), axis=1)
+            hits = mask.sum()
+            if hits > 0:
+                st.info(f"🔍 **{hits}** variant(s) matched for `{lookup}`")
+                match_df = paint_df[mask][["SHORT_VC", "SALES_DESCRIPTION", "MODEL", "LINE", "WIRING_PART_NUMBER", "COCKPIT", "ENGINE"] + FLOAT_COLS]
+                match_df = match_df.rename(columns={"SHORT_VC": "Short VC", "SALES_DESCRIPTION": "Description", "WIRING_PART_NUMBER": "Wiring Part", "MODEL": "Model", "LINE": "Line"})
+                st.dataframe(match_df, use_container_width=True, hide_index=True)
+            else:
+                st.warning(f"No matches found for `{lookup}`")
 
     # ═══════════════════════════════════════════
     # TABS
     # ═══════════════════════════════════════════
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "📊 Model Wise Float",
         "🔋 Engine & Battery",
         "🔌 Wiring Harness",
         "🎛️ Cockpit Assembly",
+        "📈 VIN vs Float",
+        "🔄 File Status & Update",
     ])
 
     # ─────────────────────────────────────────
@@ -1340,45 +1787,51 @@ def main():
     # ─────────────────────────────────────────
     with tab1:
         st.markdown('<div class="section-title">Model Wise Float Summary</div>', unsafe_allow_html=True)
-
-        # KPI row
-        pf_filtered = paint_df if line_filter == "All Lines" else paint_df[paint_df["LINE"] == line_filter]
-        c1, c2, c3, c4, c5 = st.columns(5)
-        c1.metric("Total Float", f"{int(pf_filtered['TOTAL_FLOAT'].sum()):,}")
-        c2.metric("PBS Float", f"{int(pf_filtered['PBS_FLOAT'].sum()):,}")
-        c3.metric("Upto Sealant", f"{int(pf_filtered['TOTAL_UPTO_SEALANT'].sum()):,}")
-        c4.metric("BIW→PT", f"{int(pf_filtered['BIW_LIFTING_TO_PT'].sum()):,}")
-        c5.metric("Variants", f"{len(pf_filtered):,}")
-
-        st.markdown("")
-
-        model_df = compute_model_wise_float(paint_df, dpt_all, line_filter)
-        if not model_df.empty:
-            # Highlight total rows
-            def style_total_row(row):
-                model_name = str(row.get("MODEL", "")).upper()
-                if "GRAND TOTAL" in model_name:
-                    return ["background-color: #dcfce7; color: #0f5132; font-weight:800"] * len(row)
-                elif "TOTAL" in model_name:
-                    return ["background-color: #e0e7ff; color: #1e3a8a; font-weight:700"] * len(row)
-                return [""] * len(row)
-
-            styled = model_df.style
-            
-            # Apply generic header styles to match other tables
-            styles = {col: [{'selector': 'th', 'props': [('background-color', '#D9E1F2'), ('color', 'black'), ('border', '1px solid #94a3b8')]}] for col in model_df.columns}
-            styled = styled.set_table_styles(styles, overwrite=False).apply(style_total_row, axis=1)
-            
-            st.dataframe(styled, use_container_width=True, hide_index=True, height=450)
-
-            st.download_button(
-                "📥  Download Model Wise Float",
-                to_excel(styled, "Model Wise Float", table_type="generic"),
-                file_name=f"model_wise_float_{datetime.now().strftime('%Y%m%d')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
+        if not bom_loaded:
+            st.info("💡 **BOM details.xlsx** is missing or empty. Please go to the **🔄 File Status & Update** tab to upload it.")
+        elif not paint_loaded:
+            st.info("💡 **Paint Float** report data is missing or empty. Please go to the **🔄 File Status & Update** tab to upload it.")
         else:
-            st.info("No data available for the selected filter.")
+            # KPI row
+            pf_filtered = paint_df if line_filter == "All Lines" else paint_df[paint_df["LINE"] == line_filter]
+            c1, c2, c3, c4, c5 = st.columns(5)
+            c1.metric("Total Float", f"{int(pf_filtered['TOTAL_FLOAT'].sum()):,}")
+            c2.metric("PBS Float", f"{int(pf_filtered['PBS_FLOAT'].sum()):,}")
+            c3.metric("Upto Sealant", f"{int(pf_filtered['TOTAL_UPTO_SEALANT'].sum()):,}")
+            c4.metric("BIW→PT", f"{int(pf_filtered['BIW_LIFTING_TO_PT'].sum()):,}")
+            c5.metric("Variants", f"{len(pf_filtered):,}")
+
+            st.markdown("")
+
+            model_df = compute_model_wise_float(paint_df, dpt_all, line_filter)
+            if not model_df.empty:
+
+
+                # Highlight total rows
+                def style_total_row(row):
+                    model_name = str(row.get("MODEL", "")).upper()
+                    if "GRAND TOTAL" in model_name:
+                        return ["background-color: #dcfce7; color: #0f5132; font-weight:800"] * len(row)
+                    elif "TOTAL" in model_name:
+                        return ["background-color: #e0e7ff; color: #1e3a8a; font-weight:700"] * len(row)
+                    return [""] * len(row)
+
+                styled = model_df.style
+                
+                # Apply generic header styles to match other tables
+                styles = {col: [{'selector': 'th', 'props': [('background-color', '#D9E1F2'), ('color', 'black'), ('border', '1px solid #94a3b8')]}] for col in model_df.columns}
+                styled = styled.set_table_styles(styles, overwrite=False).apply(style_total_row, axis=1)
+                
+                st.dataframe(styled, use_container_width=True, hide_index=True, height=450)
+
+                st.download_button(
+                    "📥  Download Model Wise Float",
+                    to_excel(styled, "Model Wise Float", table_type="generic"),
+                    file_name=f"model_wise_float_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+            else:
+                st.info("No data available for the selected filter.")
 
     # ─────────────────────────────────────────
     # TAB 2 — ENGINE & BATTERY SUMMARY
@@ -1387,87 +1840,103 @@ def main():
         st.markdown('<div class="section-title">Engine & Battery Summary — Manual Stock Entry</div>', unsafe_allow_html=True)
         st.caption("Edit the **Stock w/ Transit** and **Clearance 6:30AM** columns below. Your entries are saved automatically.")
 
-        engine_req = build_engine_table(paint_df, line_filter)
-
-        if engine_req.empty:
-            st.info("No engine data available for the selected filter.")
+        if not bom_loaded:
+            st.info("💡 **BOM details.xlsx** is missing or empty. Please go to the **🔄 File Status & Update** tab to upload it.")
+        elif not paint_loaded:
+            st.info("💡 **Paint Float** report data is missing or empty. Please go to the **🔄 File Status & Update** tab to upload it.")
         else:
-            # Load saved engine stock
-            saved = load_engine_json()
+            engine_req = build_engine_table(paint_df, line_filter)
 
-            # Build editable dataframe
-            engine_req["Clearance After 6:30AM"] = engine_req["Engine Part No"].map(lambda e: saved.get(e, {}).get("clearance", 0))
-            engine_req["Today VIN"] = engine_req["Engine Part No"].map(lambda e: saved.get(e, {}).get("today_vin", 0))
+            if engine_req.empty:
+                st.info("No engine data available for the selected filter.")
+            else:
+                # Load saved engine stock
+                saved = load_engine_json()
 
-            display_engine = engine_req[[
-                "Engine Part No", "Model", "TA Code", "Clearance After 6:30AM", "Today VIN", 
-                "PBS_FLOAT", "UPTO_SEALANT", "TOTAL_FLOAT", "LINE"
-            ]].rename(columns={
-                "PBS_FLOAT": "PBS FLOAT",
-                "UPTO_SEALANT": "Float UPTO SEALANT",
-                "TOTAL_FLOAT": "TOTAL FLOAT"
-            })
+                # Sum DPT VIN for each engine part number if DPT plans are uploaded
+                today_engine_vin = {}
+                if dpt_all is not None and not dpt_all.empty:
+                    dpt = dpt_all.copy()
+                    dpt["ENGINE"] = dpt["ENGINE"].astype(str).str.strip()
+                    dpt_agg = dpt[dpt["ENGINE"].str.len() >= 5].groupby("ENGINE", as_index=False)["DPT_VIN"].sum()
+                    today_engine_vin = dict(zip(dpt_agg["ENGINE"], dpt_agg["DPT_VIN"]))
 
-            edited = st.data_editor(
-                display_engine,
-                use_container_width=True,
-                hide_index=True,
-                num_rows="fixed",
-                disabled=["Engine Part No", "PBS FLOAT", "Float UPTO SEALANT", "TOTAL FLOAT", "LINE"],
-                column_config={
-                    "Clearance After 6:30AM": st.column_config.NumberColumn("Clearance After 6:30AM", min_value=0, step=1),
-                    "Today VIN": st.column_config.NumberColumn("Today VIN", min_value=0, step=1),
-                },
-                key="engine_editor",
-            )
+                # Build editable dataframe
+                engine_req["Clearance After 6:30AM"] = engine_req["Engine Part No"].map(lambda e: saved.get(e, {}).get("clearance", 0))
+                engine_req["Today VIN"] = engine_req["Engine Part No"].map(
+                    lambda e: today_engine_vin.get(e, saved.get(e, {}).get("today_vin", 0))
+                )
 
-            # Auto-save on every edit
-            new_saved = {}
-            for _, row in edited.iterrows():
-                ep = row["Engine Part No"]
-                new_saved[ep] = {
-                    "model": row.get("Model", ""),
-                    "ta_code": row.get("TA Code", ""),
-                    "clearance": int(row.get("Clearance After 6:30AM", 0) or 0),
-                    "today_vin": int(row.get("Today VIN", 0) or 0),
-                }
-            save_engine_json(new_saved)
+                display_engine = engine_req[[
+                    "Engine Part No", "Model", "TA Code", "Clearance After 6:30AM", "Today VIN", 
+                    "PBS_FLOAT", "UPTO_SEALANT", "TOTAL_FLOAT", "LINE"
+                ]].rename(columns={
+                    "PBS_FLOAT": "PBS FLOAT",
+                    "UPTO_SEALANT": "Float UPTO SEALANT",
+                    "TOTAL_FLOAT": "TOTAL FLOAT"
+                })
 
-            # Compute shortage
-            result = edited.copy()
-            result["Bal"] = result["Clearance After 6:30AM"] - result["Today VIN"]
-            result["With respect to PBS FLOAT"] = result["Bal"] - result["PBS FLOAT"]
-            result["With respect to Sealant FLOAT"] = result["Bal"] - result["Float UPTO SEALANT"]
-            result["With respect to Total FLOAT"] = result["Bal"] - result["TOTAL FLOAT"]
+                edited = st.data_editor(
+                    display_engine,
+                    use_container_width=True,
+                    hide_index=True,
+                    num_rows="fixed",
+                    disabled=["Engine Part No", "PBS FLOAT", "Float UPTO SEALANT", "TOTAL FLOAT", "LINE"],
+                    column_config={
+                        "Clearance After 6:30AM": st.column_config.NumberColumn("Clearance After 6:30AM", min_value=0, step=1),
+                        "Today VIN": st.column_config.NumberColumn("Today VIN", min_value=0, step=1),
+                    },
+                    key="engine_editor",
+                )
 
-            st.markdown('<div class="section-title">Computed Shortage</div>', unsafe_allow_html=True)
-            
-            # Rearrange final columns and inject subtotals
-            result = result[[
-                "Engine Part No", "Model", "TA Code", "Clearance After 6:30AM", "Today VIN", "Bal",
-                "PBS FLOAT", "Float UPTO SEALANT", "TOTAL FLOAT",
-                "With respect to PBS FLOAT", "With respect to Sealant FLOAT", "With respect to Total FLOAT", "LINE"
-            ]]
-            
-            result = add_engine_subtotals(result)
+                # Auto-save on every edit
+                new_saved = {}
+                for _, row in edited.iterrows():
+                    ep = row["Engine Part No"]
+                    new_saved[ep] = {
+                        "model": row.get("Model", ""),
+                        "ta_code": row.get("TA Code", ""),
+                        "clearance": int(row.get("Clearance After 6:30AM", 0) or 0),
+                        "today_vin": int(row.get("Today VIN", 0) or 0),
+                    }
+                save_engine_json(new_saved)
 
-            # KPI for engine
-            total_short = result["With respect to Total FLOAT"].sum()
-            crit = (result["With respect to Total FLOAT"] < 0).sum()
-            ec1, ec2, ec3 = st.columns(3)
-            ec1.metric("Engine Variants", len(result))
-            ec2.metric("Critical Shortages", crit, delta=f"-{crit}" if crit else "0", delta_color="inverse")
-            ec3.metric("Net Balance (Total)", int(total_short))
+                # Compute shortage
+                result = edited.copy()
+                result["Bal"] = result["Clearance After 6:30AM"] - result["Today VIN"]
+                result["With respect to PBS FLOAT"] = result["Bal"] - result["PBS FLOAT"]
+                result["With respect to Sealant FLOAT"] = result["Bal"] - result["Float UPTO SEALANT"]
+                result["With respect to Total FLOAT"] = result["Bal"] - result["TOTAL FLOAT"]
 
-            styled_eng = style_shortage_df(result, table_type="generic")
-            st.dataframe(styled_eng, use_container_width=True, hide_index=True, height=400)
+                st.markdown('<div class="section-title">Computed Shortage</div>', unsafe_allow_html=True)
+                
+                # Rearrange final columns and inject subtotals
+                result = result[[
+                    "Engine Part No", "Model", "TA Code", "Clearance After 6:30AM", "Today VIN", "Bal",
+                    "PBS FLOAT", "Float UPTO SEALANT", "TOTAL FLOAT",
+                    "With respect to PBS FLOAT", "With respect to Sealant FLOAT", "With respect to Total FLOAT", "LINE"
+                ]]
+                
+                result = add_engine_subtotals(result)
 
-            st.download_button(
-                "📥  Download Engine Summary",
-                to_excel(result, "Engine Summary", table_type="engine"),
-                file_name=f"engine_summary_{datetime.now().strftime('%Y%m%d')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
+                # KPI for engine (exclude subtotal rows from count and sum)
+                real_result = result[result["Engine Part No"].notna() & (result["Engine Part No"] != "")]
+                total_short = real_result["With respect to Total FLOAT"].sum()
+                crit = (real_result["With respect to Total FLOAT"] < 0).sum()
+                ec1, ec2, ec3 = st.columns(3)
+                ec1.metric("Engine Variants", len(real_result))
+                ec2.metric("Critical Shortages", crit, delta=f"-{crit}" if crit else "0", delta_color="inverse")
+                ec3.metric("Net Balance (Total)", int(total_short))
+
+                styled_eng = style_shortage_df(result, table_type="generic")
+                st.dataframe(styled_eng, use_container_width=True, hide_index=True, height=400)
+
+                st.download_button(
+                    "📥  Download Engine Summary",
+                    to_excel(result, "Engine Summary", table_type="engine"),
+                    file_name=f"engine_summary_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
 
     # ─────────────────────────────────────────
     # TAB 3 — WIRING HARNESS TRACK
@@ -1475,36 +1944,47 @@ def main():
     with tab3:
         st.markdown('<div class="section-title">Wiring Harness Shortage Track</div>', unsafe_allow_html=True)
 
-        wiring_summary = compute_wiring_summary(
-            paint_df, wiring_tcf1, wiring_tcf2, pm, dpt_all, line_filter
-        )
-
-        if wiring_summary.empty:
-            st.info("No wiring data available for the selected filter.")
+        if not bom_loaded:
+            st.info("💡 **BOM details.xlsx** is missing or empty. Please go to the **🔄 File Status & Update** tab to upload it.")
+        elif not paint_loaded:
+            st.info("💡 **Paint Float** report data is missing or empty. Please go to the **🔄 File Status & Update** tab to upload it.")
         else:
-            # KPIs
-            total_parts = len(wiring_summary)
-            critical = (wiring_summary["Shortage for TOTAL FLOAT"] < 0).sum()
-            marginal = (wiring_summary["Shortage for TOTAL FLOAT"] == 0).sum()
-            healthy = (wiring_summary["Shortage for TOTAL FLOAT"] > 0).sum()
-
-            wc1, wc2, wc3, wc4 = st.columns(4)
-            wc1.metric("Total Parts", total_parts)
-            wc2.metric("🔴 Critical", critical, delta=f"-{critical}" if critical else "0", delta_color="inverse")
-            wc3.metric("🟡 Marginal", marginal)
-            wc4.metric("🟢 Healthy", healthy)
-
-            st.markdown("")
-
-            styled_w = style_shortage_df(wiring_summary, table_type="wiring")
-            st.dataframe(styled_w, use_container_width=True, hide_index=True, height=500)
-
-            st.download_button(
-                "📥  Download Wiring Summary",
-                to_excel(styled_w, "Wiring Summary", table_type="wiring"),
-                file_name=f"wiring_summary_{datetime.now().strftime('%Y%m%d')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            wiring_summary = compute_wiring_summary(
+                paint_df, wiring_tcf1, wiring_tcf2, pm, dpt_all, line_filter
             )
+
+            if wiring_summary.empty:
+                st.info("No wiring data available for the selected filter.")
+            else:
+                # KPIs
+                total_parts = len(wiring_summary)
+                critical = (wiring_summary["Shortage for TOTAL FLOAT"] < 0).sum()
+                marginal = (wiring_summary["Shortage for TOTAL FLOAT"] == 0).sum()
+                healthy = (wiring_summary["Shortage for TOTAL FLOAT"] > 0).sum()
+
+                wc1, wc2, wc3, wc4 = st.columns(4)
+                wc1.metric("Total Parts", total_parts)
+                wc2.metric("🔴 Critical", critical, delta=f"-{critical}" if critical else "0", delta_color="inverse")
+                wc3.metric("🟡 Marginal", marginal)
+                wc4.metric("🟢 Healthy", healthy)
+
+                st.markdown("")
+
+                # Shortage Filter Checkbox
+                show_only_short = st.checkbox("🔴 Show only parts with shortages (Shortage < 0)", key="wiring_shortage_filter")
+                display_df = wiring_summary.copy()
+                if show_only_short:
+                    display_df = display_df[display_df["Shortage for TOTAL FLOAT"] < 0]
+
+                styled_w = style_shortage_df(display_df, table_type="wiring")
+                st.dataframe(styled_w, use_container_width=True, hide_index=True, height=500)
+
+                st.download_button(
+                    "📥  Download Wiring Summary",
+                    to_excel(styled_w, "Wiring Summary", table_type="wiring"),
+                    file_name=f"wiring_summary_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
 
     # ─────────────────────────────────────────
     # TAB 4 — COCKPIT ASSEMBLY SUMMARY
@@ -1512,36 +1992,275 @@ def main():
     with tab4:
         st.markdown('<div class="section-title">Cockpit Assembly Shortage Report</div>', unsafe_allow_html=True)
 
-        cockpit_summary = compute_cockpit_summary(
-            paint_df, cockpit_dfs, pm, dpt_all, line_filter
+        if not bom_loaded:
+            st.info("💡 **BOM details.xlsx** is missing or empty. Please go to the **🔄 File Status & Update** tab to upload it.")
+        elif not paint_loaded:
+            st.info("💡 **Paint Float** report data is missing or empty. Please go to the **🔄 File Status & Update** tab to upload it.")
+        else:
+            cockpit_summary = compute_cockpit_summary(
+                paint_df, cockpit_dfs, pm, dpt_all, line_filter
+            )
+
+            if cockpit_summary.empty:
+                st.info("No cockpit data available for the selected filter.")
+            else:
+                # KPIs
+                total_cp = len(cockpit_summary)
+                crit_cp = (cockpit_summary["Shortage for TOTAL FLOAT"] < 0).sum()
+                marg_cp = (cockpit_summary["Shortage for TOTAL FLOAT"] == 0).sum()
+                ok_cp = (cockpit_summary["Shortage for TOTAL FLOAT"] > 0).sum()
+
+                cc1, cc2, cc3, cc4 = st.columns(4)
+                cc1.metric("Total Parts", total_cp)
+                cc2.metric("🔴 Critical", crit_cp, delta=f"-{crit_cp}" if crit_cp else "0", delta_color="inverse")
+                cc3.metric("🟡 Marginal", marg_cp)
+                cc4.metric("🟢 Healthy", ok_cp)
+
+                st.markdown("")
+
+                # Shortage Filter Checkbox
+                show_only_short = st.checkbox("🔴 Show only parts with shortages (Shortage < 0)", key="cockpit_shortage_filter")
+                display_df = cockpit_summary.copy()
+                if show_only_short:
+                    display_df = display_df[display_df["Shortage for TOTAL FLOAT"] < 0]
+
+                styled_c = style_shortage_df(display_df, table_type="cockpit")
+                st.dataframe(styled_c, use_container_width=True, hide_index=True, height=500)
+
+                st.download_button(
+                    "📥  Download Cockpit Summary",
+                    to_excel(styled_c, "Cockpit Summary", table_type="cockpit"),
+                    file_name=f"cockpit_summary_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+
+    # ─────────────────────────────────────────
+    # TAB 5 — VIN vs FLOAT SHORTAGE
+    # ─────────────────────────────────────────
+    with tab5:
+        st.markdown('<div class="section-title">VIN Generation vs Paint Float Shortage</div>', unsafe_allow_html=True)
+        st.caption(
+            "Today VIN (DPT) vs Paint Float stages. "
+            "**Negative shortage** = VIN plan exceeds float → potential gap."
         )
 
-        if cockpit_summary.empty:
-            st.info("No cockpit data available for the selected filter.")
+        vin_float_df = compute_vin_vs_float(paint_df, dpt_all, line_filter)
+
+        if not bom_loaded:
+            st.info("💡 **BOM details.xlsx** is missing or empty. Please go to the **🔄 File Status & Update** tab to upload it.")
+        elif not paint_loaded:
+            st.info("💡 **Paint Float** report data is missing or empty. Please go to the **🔄 File Status & Update** tab to upload it.")
         else:
-            # KPIs
-            total_cp = len(cockpit_summary)
-            crit_cp = (cockpit_summary["Shortage for TOTAL FLOAT"] < 0).sum()
-            marg_cp = (cockpit_summary["Shortage for TOTAL FLOAT"] == 0).sum()
-            ok_cp = (cockpit_summary["Shortage for TOTAL FLOAT"] > 0).sum()
+            vin_float_df = compute_vin_vs_float(paint_df, dpt_all, line_filter)
 
-            cc1, cc2, cc3, cc4 = st.columns(4)
-            cc1.metric("Total Parts", total_cp)
-            cc2.metric("🔴 Critical", crit_cp, delta=f"-{crit_cp}" if crit_cp else "0", delta_color="inverse")
-            cc3.metric("🟡 Marginal", marg_cp)
-            cc4.metric("🟢 Healthy", ok_cp)
+            if vin_float_df.empty:
+                st.info("Upload DPT Plan files to populate VIN generation data.")
+            else:
+                # KPIs
+                total_vc     = len(vin_float_df)
+                total_plan   = int(vin_float_df["DPT Plan"].sum())
+                total_vin    = int(vin_float_df["Today VIN (DPT)"].sum())
+                crit_total   = (vin_float_df["Shortage vs TOTAL Float"] < 0).sum()
+                crit_pbs     = (vin_float_df["Shortage vs PBS Float"] < 0).sum()
+                crit_seal    = (vin_float_df["Shortage vs Upto Sealant"] < 0).sum()
 
-            st.markdown("")
+                k1, k2, k3, k4, k5, k6 = st.columns(6)
+                k1.metric("Variants",      total_vc)
+                k2.metric("DPT Plan",      f"{total_plan:,}")
+                k3.metric("Today VIN",     f"{total_vin:,}")
+                k4.metric("🔴 vs PBS",     crit_pbs,   delta=f"-{crit_pbs}"   if crit_pbs   else "0", delta_color="inverse")
+                k5.metric("🔴 vs Sealant", crit_seal,  delta=f"-{crit_seal}"  if crit_seal  else "0", delta_color="inverse")
+                k6.metric("🔴 vs Total",   crit_total, delta=f"-{crit_total}" if crit_total else "0", delta_color="inverse")
 
-            styled_c = style_shortage_df(cockpit_summary, table_type="cockpit")
-            st.dataframe(styled_c, use_container_width=True, hide_index=True, height=500)
+                st.markdown("")
 
-            st.download_button(
-                "📥  Download Cockpit Summary",
-                to_excel(styled_c, "Cockpit Summary", table_type="cockpit"),
-                file_name=f"cockpit_summary_{datetime.now().strftime('%Y%m%d')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                # Colour-code shortage columns
+                def _style_vin_float(df):
+                    styled = df.style
+                    shortage_cols = ["Shortage vs PBS Float", "Shortage vs Upto Sealant", "Shortage vs TOTAL Float"]
+
+                    def _color(val):
+                        try:
+                            v = float(val)
+                            if v < 0:  return "background-color:#fee2e2; color:#991b1b; font-weight:700"
+                            if v == 0: return "background-color:#fef9c3; color:#854d0e"
+                            return "background-color:#dcfce7; color:#166534"
+                        except:
+                            return ""
+
+                    for col in shortage_cols:
+                        if col in df.columns:
+                            styled = styled.applymap(_color, subset=[col])
+
+                    # DPT VIN column highlight
+                    if "Today VIN (DPT)" in df.columns:
+                        styled = styled.applymap(
+                            lambda v: "background-color:#dbeafe; color:#1e3a8a; font-weight:600",
+                            subset=["Today VIN (DPT)"]
+                        )
+                    return styled
+
+                styled_vf = _style_vin_float(vin_float_df)
+                st.dataframe(styled_vf, use_container_width=True, hide_index=True, height=520)
+
+                # Model-wise summary table
+                st.markdown('<div class="section-title">Model-Wise Summary</div>', unsafe_allow_html=True)
+                model_summary = (
+                    vin_float_df.groupby(["Line", "Model"], as_index=False)
+                    .agg(
+                        Variants=("Short VC", "count"),
+                        DPT_Plan_Sum=("DPT Plan", "sum"),
+                        Today_VIN_Sum=("Today VIN (DPT)", "sum"),
+                        Total_Float_Sum=("TOTAL Float", "sum"),
+                        PBS_Float_Sum=("PBS Float", "sum"),
+                        Upto_Sealant_Sum=("Upto Sealant", "sum"),
+                        Short_PBS=("Shortage vs PBS Float", "sum"),
+                        Short_Seal=("Shortage vs Upto Sealant", "sum"),
+                        Short_Total=("Shortage vs TOTAL Float", "sum"),
+                    )
+                    .rename(columns={
+                        "DPT_Plan_Sum":    "DPT Plan",
+                        "Today_VIN_Sum":   "Today VIN",
+                        "Total_Float_Sum": "TOTAL Float",
+                        "PBS_Float_Sum":   "PBS Float",
+                        "Upto_Sealant_Sum":"Upto Sealant",
+                        "Short_PBS":       "Shortage vs PBS",
+                        "Short_Seal":      "Shortage vs Sealant",
+                        "Short_Total":     "Shortage vs Total",
+                    })
+                )
+                st.dataframe(model_summary, use_container_width=True, hide_index=True)
+
+                st.download_button(
+                    "📥  Download VIN vs Float",
+                    to_excel(vin_float_df, "VIN vs Float", table_type="generic"),
+                    file_name=f"vin_vs_float_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                )
+
+    # ─────────────────────────────────────────
+    # TAB 6 — FILE STATUS & UPDATE
+    # ─────────────────────────────────────────
+    with tab6:
+        st.markdown('<div class="section-title">File Status & Upload Center</div>', unsafe_allow_html=True)
+        st.caption(
+            "Manage manual file uploads, monitor scanned files in the project workspace, "
+            "and view the system auto-reset status."
+        )
+
+        col_status, col_upload = st.columns([1, 1])
+
+        with col_status:
+            st.markdown("### 📋 Current File Status")
+            
+            # Next Reset Countdown
+            next_reset = now.replace(hour=RESET_HOUR, minute=RESET_MINUTE, second=0, microsecond=0)
+            if now >= next_reset:
+                from datetime import timedelta
+                next_reset = next_reset + timedelta(days=1)
+            mins_to_reset = int((next_reset - now).total_seconds() / 60)
+            
+            st.info(f"⏱️ **Next Auto-Reset**: in **{mins_to_reset} min** (at 6:30 AM). All uploaded data will be cleared.")
+
+            # File Status Badges using get_source
+            for ft in RAW_FILE_TYPES:
+                src_type, src_path = get_source(ft)
+                if src_type == "uploaded":
+                    mtime = datetime.fromtimestamp(os.path.getmtime(src_path))
+                    age = (now - mtime).total_seconds()
+                    badge_style = "background-color:#dcfce7; color:#15803d; border-radius:4px; padding:2px 6px; font-weight:bold; display:inline-block; font-size:0.8em;" if age < 86400 else "background-color:#fee2e2; color:#b91c1c; border-radius:4px; padding:2px 6px; font-weight:bold; display:inline-block; font-size:0.8em;"
+                    ts = mtime.strftime("%d-%b %H:%M")
+                    orig = file_meta.get(ft, {}).get("original_name", src_path.name)
+                    st.markdown(
+                        f'<div style="margin-bottom:12px;">'
+                        f'<span style="{badge_style}">● {ft}</span> &nbsp;'
+                        f'<small style="color:#64748b">Uploaded {ts} &nbsp;·&nbsp; 📄 {orig}</small>'
+                        f'</div>',
+                        unsafe_allow_html=True
+                    )
+                elif src_type == "scanned":
+                    mtime = datetime.fromtimestamp(os.path.getmtime(src_path))
+                    age = (now - mtime).total_seconds()
+                    badge_style = "background-color:#dbeafe; color:#1d4ed8; border-radius:4px; padding:2px 6px; font-weight:bold; display:inline-block; font-size:0.8em;" if age < 86400 else "background-color:#fee2e2; color:#b91c1c; border-radius:4px; padding:2px 6px; font-weight:bold; display:inline-block; font-size:0.8em;"
+                    ts = mtime.strftime("%d-%b %H:%M")
+                    name_upper = src_path.name.upper()
+                    is_con = ("TCF VIN" in name_upper and "FLOAT" in name_upper and "MAPPING" in name_upper)
+                    label = "Consolidated" if is_con else "Auto-scanned"
+                    st.markdown(
+                        f'<div style="margin-bottom:12px;">'
+                        f'<span style="{badge_style}">◉ {ft}</span> &nbsp;'
+                        f'<small style="color:#64748b">{label} {ts} &nbsp;·&nbsp; 📄 {src_path.name}</small>'
+                        f'</div>',
+                        unsafe_allow_html=True
+                    )
+                else:
+                    st.markdown(
+                        f'<div style="margin-bottom:12px;">'
+                        f'<span style="background-color:#f1f5f9; color:#64748b; border-radius:4px; padding:2px 6px; font-weight:bold; display:inline-block; font-size:0.8em;">○ {ft}</span> &nbsp;'
+                        f'<small style="color:#94a3b8">— not found</small>'
+                        f'</div>',
+                        unsafe_allow_html=True
+                    )
+
+            # BOM Master Status
+            st.markdown("### 🗂 BOM Master Data")
+            bom_info = get_bom_info()
+            if bom_info:
+                bom_ts = bom_info.get("loaded_at", "Unknown")
+                bom_rows = bom_info.get("row_count", 0)
+                bom_src = bom_info.get("source", "Unknown")
+                st.markdown(
+                    f'<div style="background-color:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; padding:10px; margin-top:10px;">'
+                    f'<span style="color:#166534; font-weight:bold;">✅ BOM Loaded</span><br>'
+                    f'<small style="color:#166534">{bom_rows} variants &nbsp;·&nbsp; 📄 {bom_src} &nbsp;·&nbsp; 🕐 {bom_ts}</small>'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+                
+                # Render BOM Mapping Warnings if any missing VCs
+                if missing_bom_vcs:
+                    st.markdown("")
+                    st.warning(f"⚠️ **BOM Mapping Warning**: Found **{len(missing_bom_vcs)}** active Short VC(s) in Paint Float / DPT Plan without a matching row in the BOM Details file. This can lead to missing wiring, cockpit, or engine allocations!")
+                    with st.expander("Show Missing Short VCs"):
+                        st.write(", ".join(missing_bom_vcs))
+                else:
+                    st.markdown("")
+                    st.success("✅ **BOM Integrity OK**: All active Short VCs are mapped in BOM details!")
+            else:
+                st.markdown(
+                    f'<div style="background-color:#fef2f2; border:1px solid #fecaca; border-radius:6px; padding:10px; margin-top:10px;">'
+                    f'<span style="color:#991b1b; font-weight:bold;">⚠️ BOM Missing</span><br>'
+                    f'<small style="color:#991b1b">Please ensure <b>Bom details.xlsx</b> is present in the project folder.</small>'
+                    f'</div>',
+                    unsafe_allow_html=True
+                )
+
+        with col_upload:
+            st.markdown("### 📁 Upload / Update Data")
+            selected_ft = st.selectbox("Select file type to update", RAW_FILE_TYPES, key="tab6_ft_select")
+            uploaded = st.file_uploader(
+                f"Upload **{selected_ft}** file",
+                type=["xlsb", "xlsx", "xls"],
+                key=f"tab6_upload_{selected_ft}",
             )
+            if uploaded is not None:
+                state_key = f"last_processed_{selected_ft}"
+                upload_sig = f"{uploaded.name}_{uploaded.size}"
+                if st.session_state.get(state_key) != upload_sig:
+                    save_upload(uploaded, selected_ft)
+                    st.session_state[state_key] = upload_sig
+                    st.toast(f"✅ {selected_ft} saved successfully!", icon="✅")
+                    st.cache_data.clear()
+                    st.rerun()
+
+            st.divider()
+            st.markdown("### 🗑️ Reset Options")
+            if st.button("🔄 Manual Daily Reset", help="Clear all manually uploaded files and JSON stocks."):
+                _perform_reset()
+                st.success("✅ Reset complete — all uploads and caches cleared!")
+                st.cache_data.clear()
+                st.rerun()
+
 
 
 # ═══════════════════════════════════════════════════════════════

@@ -1,0 +1,76 @@
+Reading reference file: TCF VIN  & Paint Float mapping data-1.xlsx
+Extracted sheets saved to: test_runs
+
+--- Testing Part Master / BOM details loading ---
+BOM master shape: (842, 4)
+BOM columns: ['SHORT_VC', 'FRONT_WIRING', 'COCKPIT', 'ENGINE']
+
+--- Testing Parsers ---
+Paint Float shape: (64, 22)
+Sample Paint Float columns: ['MARKET', 'PRODUCT_FAMILY', 'SALES_DESCRIPTION', 'SHORT_VC', 'PACK'] ... and float cols
+TCF1 DPT parsed shape: (30, 15)
+TCF2 DPT parsed shape: (36, 15)
+Combined DPT All shape after mapping: (66, 15)
+Mapped non-empty Wiring count: 64
+Mapped non-empty Engine count: 64
+Wiring TCF1 shape: (57, 5)
+Wiring TCF2 shape: (207, 4)
+Cockpit TCF1 Cockpit shape: (152, 5)
+Cockpit TCF2 Cockpit shape: (304, 5)
+Cockpit Nova Cockpit shape: (10, 5)
+
+--- Testing Compute Summaries ---
+Model Wise Float summary shape: (8, 14)
+  Paint Float           MODEL  TOTAL FLOAT  PBS FLOAT  Today VIN
+0        TCF1           PUNCH          642        101        461
+1        TCF1        PUNCH.EV          178          7        121
+2        TCF2         HARRIER           61         20         41
+3        TCF2      HARRIER.EV          110         22         64
+4        TCF2          SAFARI           57         16         49
+5        TCF1    ▸ TCF1 TOTAL          820        108        582
+6        TCF2    ▸ TCF2 TOTAL          228         58        154
+7              ▸▸ GRAND TOTAL         1048        166        736
+
+Wiring Summary shape: (96, 10)
+Wiring Summary sample (worst 5 shortages):
+  Wiring Part Number Model/Line  Clearance After 6:30AM  Today VIN  Paint TOTAL FLOAT  PBS FLOAT  Cabs FloatUPTO SEALANT  Shortage PBS FLOAT  Shortage Upto Sealant  Shortage for TOTAL FLOAT
+0       546854620389       TCF1                     189         79                138          1                      64                 109                     46                       -28
+1       547354600173       TCF2                      38         12                 53         12                      26                  14                      0                       -27
+2       549754600133       TCF1                     108         42                 93         13                      49                  53                     17                       -27
+3       549754600134       TCF1                      40         26                 37         12                      26                   2                    -12                       -23
+4       549754600239       TCF1                      26         16                 28          7                      16                   3                     -6                       -18
+
+Cockpit Summary shape: (146, 10)
+Cockpit Summary sample (worst 5 shortages):
+  Cockpit Part Number Model/Line  Clearance After 6:30AM  Today VIN  Paint TOTAL FLOAT  PBS FLOAT  Cabs FloatUPTO SEALANT  Shortage PBS FLOAT  Shortage Upto Sealant  Shortage for TOTAL FLOAT
+0        549754600106       TCF1                      19         67                104          9                      26                 -57                    -74                      -152
+1        546854650116       TCF1                      66         79                138          1                      64                 -14                    -77                      -151
+2        549754600173       TCF1                      30         76                 42          4                      21                 -50                    -67                       -88
+3        547354600113       TCF2                       3         39                 44          8                      17                 -44                    -53                       -80
+4        549754600109       TCF1                      34         45                 50         13                      20                 -24                    -31                       -61
+
+Engine base requirements shape: (15, 7)
+Engine Summary shape with subtotals: (19, 16)
+Engine Summary sample:
+   Engine Part No              Model  Clearance After 6:30AM  Today VIN  Bal  TOTAL FLOAT  With respect to Total FLOAT
+0  54850000PTP001        Punch MT SA                     100          0  100            0                          100
+1  54850000PTP002       Punch AMT SA                     100          0  100            0                          100
+2  54970000PTP002       Punch TC MCE                     100          3   97            1                           96
+3  54970000PTP003       Punch MCE MT                     100        187  -87          298                         -385
+4  54970000PTP004      Punch MCE AMT                     100         74   26          119                          -93
+5  54970000PTP005   Punch MCE CNG MT                     100        153  -53          160                         -213
+6  54970000PTP031  Punch MCE CNG AMT                     100         44   56           64                           -8
+7                      1.2 Lit Total                     700        461  239          642                         -403
+8    546816111212               Nova                     100        121  -21          178                         -199
+9                               TCF1                     800        582  218          820                         -602
+
+VIN vs Float shape: (64, 14)
+VIN vs Float sample (worst 5 shortages):
+    Short VC   Sales Description       Model  Line  DPT Plan  Today VIN (DPT)  TOTAL Float  PBS Float  Upto Sealant  BIW→PT  PT→Sealant  Shortage vs PBS Float  Shortage vs Upto Sealant  Shortage vs TOTAL Float
+0  54686824A  PUNCH.EV EMP+ S 40    PUNCH.EV  TCF1        88               79          138          1            64      38          36                     78                        15                      -59
+1  54972624A    PUNCH PURE + PMT       PUNCH  TCF1       123               67          104          9            26      58          20                     58                        41                      -37
+2  54973824A      PUNCH ADVT PMT       PUNCH  TCF1        60               38           71         12            41      22           8                     26                        -3                      -33
+3  54972724A   PUNCH PURE + PAMT       PUNCH  TCF1        42               26           57         12            27      17          13                     14                        -1                      -31
+4  54733127A   HARRIER.EV EMP 75  HARRIER.EV  TCF2        12                9           31          2            10       5          16                      7                        -1                      -22
+
+All tests ran and written to report successfully!
