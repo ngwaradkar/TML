@@ -31,26 +31,26 @@ Model Wise Float summary shape: (8, 14)
 6        TCF2    ▸ TCF2 TOTAL          228         58        154
 7              ▸▸ GRAND TOTAL         1048        166        736
 
-Wiring Summary shape: (96, 10)
+Wiring Summary shape: (96, 9)
 Wiring Summary sample (worst 5 shortages):
-  Wiring Part Number Model/Line  Clearance After 6:30AM  Today VIN  Paint TOTAL FLOAT  PBS FLOAT  Cabs FloatUPTO SEALANT  Shortage PBS FLOAT  Shortage Upto Sealant  Shortage for TOTAL FLOAT
-0       546854620389       TCF1                     189         79                138          1                      64                 109                     46                       -28
-1       547354600173       TCF2                      38         12                 53         12                      26                  14                      0                       -27
-2       549754600133       TCF1                     108         42                 93         13                      49                  53                     17                       -27
-3       549754600134       TCF1                      40         26                 37         12                      26                   2                    -12                       -23
-4       549754600239       TCF1                      26         16                 28          7                      16                   3                     -6                       -18
+  Wiring Part Number Model/Line  Clearance After 6:30AM  Paint TOTAL FLOAT  PBS FLOAT  Cabs FloatUPTO SEALANT  Shortage PBS FLOAT  Shortage Upto Sealant  Shortage for TOTAL FLOAT
+0       546854620389       TCF1                     189                138          1                      64                 109                     46                       -28
+1       549754600133       TCF1                     107                 93         13                      49                  52                     16                       -28
+2       547354600173       TCF2                      38                 53         12                      26                  14                      0                       -27
+3       549754600134       TCF1                      39                 37         12                      26                   1                    -13                       -24
+4       549754600239       TCF1                      26                 28          7                      16                   3                     -6                       -18
 
-Cockpit Summary shape: (146, 10)
+Cockpit Summary shape: (146, 9)
 Cockpit Summary sample (worst 5 shortages):
-  Cockpit Part Number Model/Line  Clearance After 6:30AM  Today VIN  Paint TOTAL FLOAT  PBS FLOAT  Cabs FloatUPTO SEALANT  Shortage PBS FLOAT  Shortage Upto Sealant  Shortage for TOTAL FLOAT
-0        549754600106       TCF1                      19         67                104          9                      26                 -57                    -74                      -152
-1        546854650116       TCF1                      66         79                138          1                      64                 -14                    -77                      -151
-2        549754600173       TCF1                      30         76                 42          4                      21                 -50                    -67                       -88
-3        547354600113       TCF2                       3         39                 44          8                      17                 -44                    -53                       -80
-4        549754600109       TCF1                      34         45                 50         13                      20                 -24                    -31                       -61
+  Cockpit Part Number Model  Clearance After 6:30AM  Paint TOTAL FLOAT  PBS FLOAT  Cabs Float UPTO SEALANT  Shortage PBS FLOAT  Shortage Upto Sealant  Shortage TOTAL FLOAT
+0        549754600106  TCF1                      19                104          9                       26                 -57                    -74                  -152
+1        546854650116  TCF1                      66                138          1                       64                 -14                    -77                  -151
+2        549754600173  TCF1                      30                 42          4                       21                 -50                    -67                   -88
+3        547354600113  TCF2                       3                 44          8                       17                 -44                    -53                   -80
+4        549754600109  TCF1                      34                 50         13                       20                 -24                    -31                   -61
 
-Engine base requirements shape: (15, 7)
-Engine Summary shape with subtotals: (19, 16)
+Engine base requirements shape: (13, 7)
+Engine Summary shape with subtotals: (17, 16)
 Engine Summary sample:
    Engine Part No              Model  Clearance After 6:30AM  Today VIN  Bal  TOTAL FLOAT  With respect to Total FLOAT
 0  54850000PTP001        Punch MT SA                     100          0  100            0                          100

@@ -44,6 +44,7 @@ RAW_FILE_TYPES = [
     "Nova Cockpit",
     "TCF1 DPT Plan",
     "TCF2 DPT Plan",
+    "Engine Manual Data",
 ]
 
 MODEL_MAP = {
@@ -106,53 +107,333 @@ PF_HEADERS = [
 
 CUSTOM_CSS = """
 <style>
-/* Hide default streamlit elements */
-header[data-testid="stHeader"] { display: none; }
-footer { display: none; }
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 
+/* Global Font Override & Soft Background */
+html, body, [class*="css"], .stMarkdown, p, span, h1, h2, h3, h4, h5, h6, button, select, input {
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+}
+
+.stApp {
+    animation: fadeIn 0.4s ease-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Hide default streamlit header and footer */
+header[data-testid="stHeader"] { display: none !important; }
+footer { display: none !important; }
+
+/* Dashboard Header Styling */
 .dash-header {
-    background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
-    color: white;
-    padding: 24px 32px;
-    border-radius: 16px;
-    margin-bottom: 24px;
-    border: 1px solid #bfdbfe;
+    background: linear-gradient(135deg, #0b1329 0%, #1e293b 60%, #1d4ed8 100%) !important;
+    box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.3) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    padding: 24px 32px !important;
+    border-radius: 20px !important;
+    margin-bottom: 24px !important;
+    transition: all 0.3s ease !important;
+}
+.dash-header:hover {
+    transform: translateY(-1px) !important;
+    box-shadow: 0 15px 35px -8px rgba(29, 78, 216, 0.2) !important;
 }
 .dash-header h1 {
     font-size: 2rem !important;
+    font-weight: 800 !important;
+    letter-spacing: -0.025em !important;
     color: #ffffff !important;
-    margin: 0 0 8px 0 !important;
+    margin: 0 0 6px 0 !important;
 }
 .dash-header p {
-    color: #e0f2fe !important;
+    color: #94a3b8 !important;
     margin: 0 !important;
-    font-size: 1.1rem;
+    font-size: 0.95rem !important;
+    font-weight: 500 !important;
 }
-.section-title {
-    font-size: 1.25rem;
+.dash-header p b {
+    color: #60a5fa !important;
     font-weight: 700;
-    margin: 24px 0 12px 0;
-    border-bottom: 2px solid #e2e8f0;
-    padding-bottom: 8px;
+}
+
+/* Custom Live Status Indicators */
+.status-container {
+    display: flex;
+    gap: 10px;
+    margin-top: 14px;
+    flex-wrap: wrap;
+}
+.status-badge {
+    background: rgba(255, 255, 255, 0.08) !important;
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    padding: 6px 14px !important;
+    border-radius: 50px !important;
+    font-size: 0.8rem !important;
+    font-weight: 600 !important;
+    color: #ffffff !important;
+    display: inline-flex !important;
+    align-items: center;
+    gap: 6px;
+}
+.status-badge-green {
+    background: rgba(16, 185, 129, 0.12) !important;
+    border: 1px solid rgba(16, 185, 129, 0.25) !important;
+    color: #34d399 !important;
+}
+.status-badge-blue {
+    background: rgba(59, 130, 246, 0.12) !important;
+    border: 1px solid rgba(59, 130, 246, 0.25) !important;
+    color: #60a5fa !important;
+}
+.status-badge-amber {
+    background: rgba(245, 158, 11, 0.12) !important;
+    border: 1px solid rgba(245, 158, 11, 0.25) !important;
+    color: #fbbf24 !important;
+}
+
+/* Section Title Styling */
+.section-title {
+    font-size: 1.25rem !important;
+    font-weight: 700 !important;
+    color: #0f172a !important;
+    margin: 28px 0 14px 0 !important;
+    padding-left: 12px !important;
+    border-left: 4px solid #2563eb !important;
+    border-bottom: none !important;
+    padding-bottom: 0 !important;
+}
+
+/* Glassmorphic Metric Cards */
+[data-testid="stMetric"] {
+    background: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    padding: 16px 20px !important;
+    border-radius: 16px !important;
+    box-shadow: 0 4px 15px -3px rgba(0, 0, 0, 0.04) !important;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+[data-testid="stMetric"]:hover {
+    transform: translateY(-3px) !important;
+    box-shadow: 0 15px 25px -5px rgba(0, 0, 0, 0.06), 0 8px 8px -5px rgba(0, 0, 0, 0.03) !important;
+    border-color: #2563eb !important;
+}
+[data-testid="stMetricLabel"] {
+    font-size: 0.78rem !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.05em !important;
+    font-weight: 700 !important;
+    color: #64748b !important;
+}
+[data-testid="stMetricValue"] {
+    font-size: 1.8rem !important;
+    font-weight: 800 !important;
+    letter-spacing: -0.03em !important;
+    color: #0f172a !important;
+}
+
+/* Sidebar Custom Styling */
+section[data-testid="stSidebar"] {
+    background-color: #0b1329 !important;
+    border-right: 1px solid #1e293b !important;
+}
+section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p, 
+section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h2,
+section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h3 {
+    color: #f8fafc !important;
+}
+
+/* Premium Button Styling */
+div.stButton > button {
+    border-radius: 12px !important;
+    padding: 10px 24px !important;
+    font-weight: 700 !important;
+    letter-spacing: -0.01em !important;
+    border: 1px solid #e2e8f0 !important;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.02) !important;
+    transition: all 0.2s ease-in-out !important;
+}
+div.stButton > button:hover {
+    transform: translateY(-1px) !important;
+    box-shadow: 0 8px 12px -3px rgba(37, 99, 235, 0.12) !important;
+    border-color: #2563eb !important;
+    color: #2563eb !important;
+}
+div.stButton > button[kind="primary"] {
+    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%) !important;
+    color: #ffffff !important;
+    border: none !important;
+}
+div.stButton > button[kind="primary"]:hover {
+    background: linear-gradient(135deg, #1d4ed8 0%, #1e40af 100%) !important;
+    color: #ffffff !important;
+    box-shadow: 0 8px 16px -3px rgba(37, 99, 235, 0.25) !important;
+}
+
+/* Premium Tabs Styling */
+button[data-baseweb="tab"] {
+    font-size: 0.98rem !important;
+    font-weight: 700 !important;
+    color: #64748b !important;
+    border-radius: 8px 8px 0 0 !important;
+    padding: 12px 20px !important;
+    border: none !important;
+    transition: all 0.2s ease !important;
+}
+button[data-baseweb="tab"]:hover {
+    color: #0f172a !important;
+    background-color: #f1f5f9 !important;
+}
+button[data-baseweb="tab"][aria-selected="true"] {
+    color: #2563eb !important;
+    background-color: rgba(37, 99, 235, 0.05) !important;
+    border-bottom: 3px solid #2563eb !important;
+}
+
+/* Custom Card Container Grid for File Status */
+.file-status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+}
+.file-status-card {
+    background: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 16px !important;
+    padding: 18px !important;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.02) !important;
+    transition: all 0.22s ease !important;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    height: 100%;
+}
+.file-status-card:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 12px 20px -8px rgba(37, 99, 235, 0.08) !important;
+    border-color: #2563eb !important;
+}
+.card-header-line {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+.card-title {
+    font-weight: 700 !important;
+    color: #1e293b !important;
+    font-size: 0.98rem !important;
+}
+.card-meta-line {
+    margin-top: 8px;
+    font-size: 0.8rem !important;
+    color: #64748b !important;
+    line-height: 1.4 !important;
+    border-top: 1px solid #f1f5f9;
+    padding-top: 8px;
+}
+
+/* Custom Status Pills */
+.pill-badge {
+    border-radius: 50px !important;
+    padding: 3px 10px !important;
+    font-weight: 700 !important;
+    font-size: 0.72rem !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.03em !important;
+    display: inline-flex !important;
+    align-items: center;
+    gap: 4px;
+}
+.pill-badge-success {
+    background-color: #dcfce7 !important;
+    color: #15803d !important;
+    border: 1px solid #bbf7d0 !important;
+}
+.pill-badge-warning {
+    background-color: #fef3c7 !important;
+    color: #b45309 !important;
+    border: 1px solid #fde68a !important;
+}
+.pill-badge-info {
+    background-color: #dbeafe !important;
+    color: #1d4ed8 !important;
+    border: 1px solid #bfdbfe !important;
+}
+.pill-badge-danger {
+    background-color: #fee2e2 !important;
+    color: #b91c1c !important;
+    border: 1px solid #fecaca !important;
+}
+
+/* Table Header Styles override */
+.stDataFrame th {
+    font-size: 0.8rem !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.02em !important;
 }
 
 /* Responsive adjustments for mobile viewports */
 @media (max-width: 768px) {
     .dash-header {
-        padding: 16px 20px !important;
-        border-radius: 12px !important;
-        margin-bottom: 16px !important;
+        padding: 18px 24px !important;
+        border-radius: 16px !important;
+        margin-bottom: 20px !important;
     }
     .dash-header h1 {
         font-size: 1.5rem !important;
     }
     .dash-header p {
-        font-size: 0.95rem !important;
+        font-size: 0.88rem !important;
     }
     .section-title {
         font-size: 1.1rem !important;
-        margin: 16px 0 8px 0 !important;
+        margin: 20px 0 10px 0 !important;
     }
+}
+
+/* Model Wise Float Table Styling */
+.model-wise-table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    font-size: 0.82rem !important;
+    font-family: 'Plus Jakarta Sans', -apple-system, sans-serif !important;
+    color: #1e293b !important;
+    background-color: #ffffff !important;
+}
+.model-wise-table th {
+    background-color: #334155 !important;
+    color: #ffffff !important;
+    font-weight: 700 !important;
+    padding: 8px 6px !important;
+    border: 1px solid #cbd5e1 !important;
+    text-align: center !important;
+    white-space: normal !important;
+    word-wrap: break-word !important;
+    vertical-align: middle !important;
+    line-height: 1.2 !important;
+}
+.model-wise-table td {
+    padding: 6px 4px !important;
+    border: 1px solid #cbd5e1 !important;
+    text-align: center !important;
+    vertical-align: middle !important;
+}
+.model-wise-table tr:hover {
+    background-color: #f8fafc !important;
+}
+.model-wise-table tr.grand-total {
+    background-color: #dcfce7 !important;
+    color: #0f5132 !important;
+    font-weight: 800 !important;
+}
+.model-wise-table tr.line-total {
+    background-color: #e0e7ff !important;
+    color: #1e3a8a !important;
+    font-weight: 700 !important;
 }
 </style>
 """
@@ -447,6 +728,26 @@ def get_bom_info() -> dict:
 
 
 
+def _get_last_reset_datetime() -> datetime:
+    """Return the datetime of the last reset as a timezone-aware (IST) datetime,
+    or a very old datetime (e.g., 1970-01-01) if not set.
+    """
+    if RESET_STATE_FILE.exists():
+        try:
+            with open(RESET_STATE_FILE) as f:
+                data = json.load(f)
+                reset_time_str = data.get("reset_time")
+                if reset_time_str:
+                    # Parse reset_time_str ("YYYY-MM-DD HH:MM:SS")
+                    dt = datetime.strptime(reset_time_str, "%Y-%m-%d %H:%M:%S")
+                    # Localize to IST (UTC+5:30)
+                    return dt.replace(tzinfo=timezone(timedelta(hours=5, minutes=30)))
+        except Exception:
+            pass
+    # Default to epoch in IST
+    return datetime(1970, 1, 1, tzinfo=timezone(timedelta(hours=5, minutes=30)))
+
+
 def get_source(file_type: str):
     """Return (source_type, path) — 'uploaded' or 'scanned' or (None, None).
     Recursively searches project directory (including Project folder) and
@@ -458,6 +759,8 @@ def get_source(file_type: str):
         if up.exists():
             return "uploaded", up
 
+    last_reset_dt = _get_last_reset_datetime()
+
     # Recursively find all Excel files in the workspace (excluding cache/test/git dirs)
     root_dir = Path("d:/TML PPC Dashboard")
     all_files = []
@@ -467,6 +770,15 @@ def get_source(file_type: str):
                 path_parts = f.parts
                 if "data" in path_parts or "test_runs" in path_parts or ".git" in path_parts or "__pycache__" in path_parts:
                     continue
+                
+                # Check modification time against the last reset datetime
+                try:
+                    mtime = datetime.fromtimestamp(os.path.getmtime(f), tz=timezone.utc).astimezone(timezone(timedelta(hours=5, minutes=30)))
+                    if mtime < last_reset_dt:
+                        continue
+                except Exception:
+                    continue
+
                 all_files.append(f)
 
     # Keywords/patterns to match individual files by file_type
@@ -478,7 +790,8 @@ def get_source(file_type: str):
         "TCF2 Cockpit": [r"Harrier safari cockpit", r"TCF 2 cockpit", r"TCF2 Cockpit"],
         "Nova Cockpit": [r"Nova_Cockpit", r"Nova"],
         "TCF1 Wiring File": [r"Wiring Harness report NEW", r"TCF 1 Wiring", r"TCF 1 Wiring Harness", r"TCF1 Wiring"],
-        "TCF2 Wiring File": [r"TCF2_Wiring", r"TCF-2 Wiring", r"TCF-2 Wiring Harness", r"TCF2 Wiring"]
+        "TCF2 Wiring File": [r"TCF2_Wiring", r"TCF-2 Wiring", r"TCF-2 Wiring Harness", r"TCF2 Wiring"],
+        "Engine Manual Data": [r"Engine manual data", r"Engine manual", r"Engine stock", r"Engine_manual_data"]
     }
 
     if file_type in patterns:
@@ -681,59 +994,276 @@ def to_excel(df_or_styler, sheet="Summary", table_type="generic") -> bytes:
             # Generic / Wiring formatting
             df.to_excel(w, index=False, sheet_name=sheet)
             ws = w.sheets[sheet]
-            orange_fill = PatternFill(start_color="F4B084", end_color="F4B084", fill_type="solid")
-            blue_fill = PatternFill(start_color="9BC2E6", end_color="9BC2E6", fill_type="solid")
+            peach_fill = PatternFill(start_color="F8CBAD", end_color="F8CBAD", fill_type="solid")
+            blue_fill = PatternFill(start_color="BDD7EE", end_color="BDD7EE", fill_type="solid")
             generic_fill = PatternFill(start_color="D9E1F2", end_color="D9E1F2", fill_type="solid")
-            red_fill = PatternFill(start_color="FDE2E2", end_color="FDE2E2", fill_type="solid")
-            red_font = Font(color="991B1B", bold=True)
+            red_fill = PatternFill(start_color="FCE4D6", end_color="FCE4D6", fill_type="solid")
+            red_font = Font(color="C00000", bold=True)
+            
+            thin_side = Side(border_style="thin", color="000000")
+            double_side = Side(border_style="double", color="000000")
 
             for i, col_name in enumerate(df.columns):
                 col_idx = i + 1
                 col_letter = get_column_letter(col_idx)
-                cell = ws.cell(row=1, column=col_idx)
                 
-                cell.border = border
-                cell.alignment = center_align
-                cell.font = Font(bold=True)
+                # Header formatting
+                header_cell = ws.cell(row=1, column=col_idx)
+                header_cell.border = Border(
+                    top=thin_side, bottom=thin_side, left=thin_side,
+                    right=double_side if i in [2, 5] else thin_side
+                )
+                header_cell.alignment = center_align
+                header_cell.font = Font(bold=True)
                 
                 if table_type in ["wiring", "cockpit"]:
-                    if i < 2: cell.fill = orange_fill
-                    else: cell.fill = blue_fill
+                    if i < 3: header_cell.fill = peach_fill
+                    else: header_cell.fill = blue_fill
                 else:
-                    cell.fill = generic_fill
+                    header_cell.fill = generic_fill
                     
                 max_len = len(str(col_name))
                 for row in range(2, len(df) + 2):
-                    cell_val = ws.cell(row=row, column=col_idx)
-                    val = str(cell_val.value or "")
+                    cell = ws.cell(row=row, column=col_idx)
+                    cell.border = Border(
+                        top=thin_side, bottom=thin_side, left=thin_side,
+                        right=double_side if i in [2, 5] else thin_side
+                    )
+                    cell.alignment = Alignment(horizontal="center", vertical="center")
+                    
+                    val = str(cell.value or "")
                     if len(val) > max_len: max_len = len(val)
                     
                     # Highlight negative shortages
                     if table_type in ["wiring", "cockpit", "generic"] and ("Shortage" in str(col_name) or "With respect to" in str(col_name)):
                         try:
-                            num_val = float(cell_val.value)
+                            num_val = float(cell.value)
                             if num_val < 0:
-                                cell_val.fill = red_fill
-                                cell_val.font = red_font
+                                cell.fill = red_fill
+                                cell.font = red_font
                         except (ValueError, TypeError):
                             pass
                 ws.column_dimensions[col_letter].width = min(max_len + 3, 30)
 
-            for row in range(2, len(df) + 2):
-                for col in range(1, len(df.columns) + 1):
-                    cell = ws.cell(row=row, column=col)
-                    cell.border = border
-                    cell.alignment = Alignment(horizontal="center", vertical="center")
-
     return buf.getvalue()
 
 
+def export_df_to_image(df: pd.DataFrame, table_type="wiring") -> bytes:
+    """Render the shortage report dataframe to a high-fidelity image matching the Excel style."""
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from io import BytesIO
+
+    plot_df = df.copy()
+    
+    # Drop Today VIN from wiring and cockpit outputs if it exists to match the screenshot
+    if "Today VIN" in plot_df.columns:
+        plot_df = plot_df.drop(columns=["Today VIN"], errors="ignore")
+        
+    if table_type == "cockpit":
+        plot_df = plot_df.rename(columns={
+            "Model/Line": "Model",
+            "Cabs FloatUPTO SEALANT": "Cabs Float UPTO SEALANT",
+            "Shortage for TOTAL FLOAT": "Shortage TOTAL FLOAT"
+        })
+
+    # Wrap header text exactly to match layouts
+    wrapped_headers = []
+    for c in plot_df.columns:
+        col_name = str(c)
+        if "Part Number" in col_name:
+            wrapped_headers.append(col_name.replace(" Part Number", "\nPart Number"))
+        elif "Clearance After" in col_name:
+            wrapped_headers.append("Clearance\nAfter\n6:30AM")
+        elif "Paint TOTAL" in col_name:
+            wrapped_headers.append("Paint TOTAL\nFLOAT")
+        elif "PBS FLOAT" in col_name:
+            wrapped_headers.append("PBS\nFLOAT")
+        elif "Cabs Float" in col_name:
+            wrapped_headers.append("Cabs Float\nUPTO\nSEALANT")
+        elif "Shortage PBS" in col_name:
+            wrapped_headers.append("Shortage PBS\nFLOAT")
+        elif "Upto Sealant" in col_name:
+            wrapped_headers.append("Shortage\nUpto\nSealant")
+        elif "TOTAL FLOAT" in col_name:
+            if "Shortage for" in col_name:
+                wrapped_headers.append("Shortage\nfor TOTAL\nFLOAT")
+            else:
+                wrapped_headers.append("Shortage\nTOTAL\nFLOAT")
+        else:
+            wrapped_headers.append(col_name)
+
+    # Shortage columns to format
+    shortage_cols = [c for c in plot_df.columns if "Shortage" in str(c) or "With respect to" in str(c)]
+    shortage_indices = [plot_df.columns.get_loc(c) for c in shortage_cols]
+
+    num_cols = len(plot_df.columns)
+    num_rows = len(plot_df)
+
+    header_height = 0.8
+    row_height = 0.45
+    fig_width = 1.25 * num_cols
+    fig_height = header_height + (num_rows * row_height)
+
+    fig, ax = plt.subplots(figsize=(fig_width, fig_height))
+    ax.axis("off")
+
+    # Construct the table
+    tbl = ax.table(
+        cellText=plot_df.astype(str).values,
+        colLabels=wrapped_headers,
+        loc="center",
+        bbox=[0, 0, 1, 1]
+    )
+
+    total_units = header_height + (num_rows * row_height)
+    h_header = header_height / total_units
+    h_row = row_height / total_units
+
+    peach_color = "#F8CBAD"
+    blue_color = "#BDD7EE"
+    pink_color = "#FCE4D6"
+    red_text = "#C00000"
+
+    for (r, c), cell in tbl.get_celld().items():
+        cell.set_linewidth(0.5)
+        cell.set_edgecolor("#000000")
+        
+        if r == 0:
+            cell.set_height(h_header)
+            cell.set_y(1.0 - h_header)
+            cell.set_facecolor(peach_color if c < 3 else blue_color)
+            cell.set_text_props(weight="bold", fontfamily="sans-serif", fontsize=10)
+        else:
+            cell.set_height(h_row)
+            cell.set_y(1.0 - h_header - r * h_row)
+            cell.set_text_props(fontfamily="sans-serif", fontsize=10)
+            
+            # Formatting negative shortage cells
+            if c in shortage_indices:
+                try:
+                    val = float(plot_df.iloc[r - 1, c])
+                    if val < 0:
+                        cell.set_facecolor(pink_color)
+                        cell.get_text().set_color(red_text)
+                        cell.set_text_props(weight="bold", fontfamily="sans-serif", fontsize=10)
+                except:
+                    pass
+
+    # Double vertical lines separation
+    # Boundaries: between col 3 (index 2) and col 4 (index 3) at x = 3 / num_cols
+    # and between col 6 (index 5) and col 7 (index 6) at x = 6 / num_cols
+    x1 = 3.0 / num_cols
+    x2 = 6.0 / num_cols
+    offset = 0.0018
+    ax.axvline(x=x1 - offset, color="#000000", linewidth=0.8, zorder=10)
+    ax.axvline(x=x1 + offset, color="#000000", linewidth=0.8, zorder=10)
+    ax.axvline(x=x2 - offset, color="#000000", linewidth=0.8, zorder=10)
+    ax.axvline(x=x2 + offset, color="#000000", linewidth=0.8, zorder=10)
+
+    buf = BytesIO()
+    plt.savefig(buf, format="png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    return buf.getvalue()
+
+
+def load_engine_from_excel(path: Path) -> dict:
+    """Parse the Engine Manual Data sheet and return a dict of engine_part_no -> clearance."""
+    try:
+        # Since it might be an HTML disguised as XLS or a normal Excel, use read_sheet wrapper
+        df = read_sheet("uploaded", path, 0)
+        if df.empty:
+            return {}
+        
+        # Find header row
+        h = _find_header_row(df, ["ENGINE PART", "CLEARANCE"])
+        if h is None:
+            # Let's try finding by checking if any row contains "Engine Part No"
+            for i in range(min(15, len(df))):
+                row_vals = [str(v).lower().strip() for v in df.iloc[i]]
+                if any("engine part" in v for v in row_vals):
+                    h = i
+                    break
+        
+        if h is not None:
+            # Set columns to header row
+            df.columns = [str(c).strip() for c in df.iloc[h]]
+            df = df.iloc[h+1:].copy().reset_index(drop=True)
+        else:
+            # Fallback: assume column 0 is Engine Part No and column 3 is Clearance
+            df.columns = ["Engine Part No", "Model", "TA Code", "Clearance After 6:30AM"] + list(df.columns[4:])
+        
+        # Rename columns to standard names
+        rename_map = {}
+        for col in df.columns:
+            col_upper = str(col).upper()
+            if "ENGINE PART" in col_upper:
+                rename_map[col] = "Engine Part No"
+            elif "CLEARANCE" in col_upper:
+                rename_map[col] = "Clearance After 6:30AM"
+            elif "TA CODE" in col_upper:
+                rename_map[col] = "TA Code"
+            elif "MODEL" in col_upper:
+                rename_map[col] = "Model"
+        df = df.rename(columns=rename_map)
+        
+        # Ensure correct columns exist
+        if "Engine Part No" not in df.columns:
+            return {}
+            
+        clearance_col = "Clearance After 6:30AM" if "Clearance After 6:30AM" in df.columns else df.columns[min(3, len(df.columns)-1)]
+        
+        result = {}
+        for _, row in df.iterrows():
+            ep = str(row["Engine Part No"]).strip()
+            # A valid engine part number should have length >= 5 and not look like a total
+            if ep and len(ep) >= 5 and "TOTAL" not in ep.upper() and "TCF" not in ep.upper():
+                clearance = 0
+                try:
+                    val = row.get(clearance_col, 0)
+                    if pd.notna(val):
+                        clearance = int(float(val))
+                except Exception:
+                    pass
+                result[ep] = clearance
+        return result
+    except Exception as e:
+        print(f"Error parsing engine excel: {e}")
+        return {}
+
+
 def load_engine_json() -> dict:
-    """Load persisted engine stock data."""
+    """Load persisted engine stock data, falling back to uploaded/scanned Excel file if newer."""
+    data = {}
+    json_mtime = 0
     if ENGINE_FILE.exists():
-        with open(ENGINE_FILE) as f:
-            return json.load(f)
-    return {}
+        try:
+            json_mtime = os.path.getmtime(ENGINE_FILE)
+            with open(ENGINE_FILE) as f:
+                data = json.load(f)
+        except Exception:
+            pass
+            
+    # Check if there is an uploaded or scanned "Engine Manual Data" sheet
+    src_type, src_path = get_source("Engine Manual Data")
+    if src_type is not None:
+        try:
+            excel_mtime = os.path.getmtime(src_path)
+            # If Excel is newer than json, or json doesn't exist/is empty, load from Excel
+            if excel_mtime > json_mtime or not data:
+                excel_data = load_engine_from_excel(src_path)
+                for ep, clearance in excel_data.items():
+                    if ep not in data:
+                        data[ep] = {"model": "", "ta_code": "", "clearance": clearance}
+                    else:
+                        data[ep]["clearance"] = clearance
+                # Save the merged data back to JSON so that it's persisted and the JSON mtime is updated
+                save_engine_json(data)
+        except Exception:
+            pass
+                
+    return data
 
 
 def save_engine_json(data: dict):
@@ -741,6 +1271,60 @@ def save_engine_json(data: dict):
     DATA_DIR.mkdir(exist_ok=True)
     with open(ENGINE_FILE, "w") as f:
         json.dump(data, f, indent=2)
+
+
+@st.dialog("Engine Manual Entry Sheet", width="large")
+def open_manual_entry_popup(editor_df):
+    st.markdown("Edit the **Clearance After 6:30AM** values below. Click **Save & Close** to apply changes.")
+
+    # Reorder columns: make TA Code last
+    cols_order = ["Engine Part No", "Model", "Clearance After 6:30AM", "TA Code"]
+    editor_df = editor_df[cols_order]
+
+    edited = st.data_editor(
+        editor_df,
+        use_container_width=True,
+        hide_index=True,
+        num_rows="fixed",
+        disabled=["Engine Part No", "Model", "TA Code"],
+        column_config={
+            "Engine Part No": st.column_config.TextColumn("Engine Part No", width="medium"),
+            "Model": st.column_config.TextColumn("Model", width="large"),
+            "Clearance After 6:30AM": st.column_config.NumberColumn("Clearance After 6:30AM", min_value=0, step=1, width="medium"),
+            "TA Code": st.column_config.TextColumn("TA Code", width="small"),
+        },
+        key="engine_editor_modal",
+    )
+
+    st.markdown("")
+    col_save, _ = st.columns([1, 4])
+    if col_save.button("💾 Save & Close", type="primary"):
+        # Load existing JSON from disk to merge and preserve other fields (today_vin, etc.)
+        current_json = load_engine_json()
+        
+        # Merge updated values
+        for _, row in edited.iterrows():
+            ep = str(row.get("Engine Part No", "")).strip()
+            if not ep or ep == "nan":
+                continue
+            clearance_val = int(row.get("Clearance After 6:30AM", 0) or 0)
+            if ep in current_json:
+                current_json[ep]["clearance"] = clearance_val
+            else:
+                current_json[ep] = {
+                    "model": str(row.get("Model", "")),
+                    "ta_code": str(row.get("TA Code", "")),
+                    "clearance": clearance_val
+                }
+                
+        save_engine_json(current_json)
+        
+        # Clear the session state cached dataframe so it reloads fresh data from JSON next time
+        if "engine_editor_df" in st.session_state:
+            del st.session_state["engine_editor_df"]
+            
+        st.success("Saved successfully!")
+        st.rerun()
 
 
 def is_valid_vc(val) -> bool:
@@ -958,7 +1542,10 @@ def parse_wiring_tcf1(src_type, src_path) -> pd.DataFrame:
         if "VC NUMBER" in vu or "VC NO" in vu: col_map.setdefault("VC", j)
         if "WIRING HARNESS" in vu: col_map.setdefault("WH", j)
         if "TOTAL PLAN" in vu: col_map.setdefault("PLAN", j)
-        if vu == "STOCK": col_map.setdefault("STOCK", j)
+        if "COVERAGE" in vu or "FRESH VIN" in vu or vu == "FRESH VIN STOCK":
+            col_map["STOCK"] = j
+        elif vu == "STOCK" and "STOCK" not in col_map:
+            col_map["STOCK"] = j
 
     vc_col = col_map.get("VC", 2)
     wh_col = col_map.get("WH", 3)
@@ -996,13 +1583,31 @@ def parse_wiring_tcf2(src_type, src_path) -> pd.DataFrame:
     h = _find_header_row(df, ["STOCK", "PLAN", "REMARK"])
     if h is None:
         h = 1
+    header_row = df.iloc[h]
     data = df.iloc[h + 1 :].copy().reset_index(drop=True)
+
+    col_map = {}
+    for j, v in enumerate(header_row):
+        if pd.isna(v): continue
+        vu = str(v).upper().strip()
+        if "VEHICLE CODE" in vu or "VC" in vu or "SHORT VC" in vu or "SHORT_VC" in vu:
+            col_map.setdefault("VC", j)
+        if "PLAN" in vu:
+            col_map.setdefault("PLAN", j)
+        if "COVERAGE" in vu or "FRESH VIN" in vu or vu == "FRESH VIN STOCK":
+            col_map["STOCK"] = j
+        elif vu == "STOCK" and "STOCK" not in col_map:
+            col_map["STOCK"] = j
+
+    vc_col = col_map.get("VC", 1)
+    plan_col = col_map.get("PLAN", 4)
+    stock_col = col_map.get("STOCK", 9)  # default to index 9 (Col J) which is FRESH VIN STOCK in TCF2
 
     result_rows = []
     for _, row in data.iterrows():
-        vc_val = str(row.iloc[1]).strip() if len(row) > 1 and pd.notna(row.iloc[1]) else ""
-        stock_val = row.iloc[8] if len(row) > 8 else np.nan
-        plan_val = row.iloc[4] if len(row) > 4 else np.nan
+        vc_val = str(row.iloc[vc_col]).strip() if vc_col < len(row) and pd.notna(row.iloc[vc_col]) else ""
+        stock_val = row.iloc[stock_col] if stock_col < len(row) else np.nan
+        plan_val = row.iloc[plan_col] if plan_col < len(row) else np.nan
 
         if is_valid_vc(vc_val):
             s = pd.to_numeric(stock_val, errors="coerce")
@@ -1302,14 +1907,13 @@ def compute_wiring_summary(
         "WIRING_PART_NUMBER": "Wiring Part Number",
         "LINE": "Model/Line",
         "CLEARANCE": "Clearance After 6:30AM",
-        "TODAY_VIN": "Today VIN",
         "PAINT_TOTAL_FLOAT": "Paint TOTAL FLOAT",
         "PBS_FLOAT": "PBS FLOAT",
         "CABS_FLOAT_UPTO_SEALANT": "Cabs FloatUPTO SEALANT",
         "SHORTAGE_PBS": "Shortage PBS FLOAT",
         "SHORTAGE_SEALANT": "Shortage Upto Sealant",
         "SHORTAGE_TOTAL": "Shortage for TOTAL FLOAT",
-    })[["Wiring Part Number", "Model/Line", "Clearance After 6:30AM", "Today VIN",
+    })[["Wiring Part Number", "Model/Line", "Clearance After 6:30AM",
         "Paint TOTAL FLOAT", "PBS FLOAT", "Cabs FloatUPTO SEALANT",
         "Shortage PBS FLOAT", "Shortage Upto Sealant", "Shortage for TOTAL FLOAT"]]
 
@@ -1407,18 +2011,17 @@ def compute_cockpit_summary(
 
     return req.rename(columns={
         "COCKPIT": "Cockpit Part Number",
-        "LINE": "Model/Line",
+        "LINE": "Model",
         "CLEARANCE": "Clearance After 6:30AM",
-        "TODAY_VIN": "Today VIN",
         "PAINT_TOTAL_FLOAT": "Paint TOTAL FLOAT",
         "PBS_FLOAT": "PBS FLOAT",
-        "CABS_FLOAT_UPTO_SEALANT": "Cabs FloatUPTO SEALANT",
+        "CABS_FLOAT_UPTO_SEALANT": "Cabs Float UPTO SEALANT",
         "SHORTAGE_PBS": "Shortage PBS FLOAT",
         "SHORTAGE_SEALANT": "Shortage Upto Sealant",
-        "SHORTAGE_TOTAL": "Shortage for TOTAL FLOAT",
-    })[["Cockpit Part Number", "Model/Line", "Clearance After 6:30AM", "Today VIN",
-        "Paint TOTAL FLOAT", "PBS FLOAT", "Cabs FloatUPTO SEALANT",
-        "Shortage PBS FLOAT", "Shortage Upto Sealant", "Shortage for TOTAL FLOAT"]]
+        "SHORTAGE_TOTAL": "Shortage TOTAL FLOAT",
+    })[["Cockpit Part Number", "Model", "Clearance After 6:30AM",
+        "Paint TOTAL FLOAT", "PBS FLOAT", "Cabs Float UPTO SEALANT",
+        "Shortage PBS FLOAT", "Shortage Upto Sealant", "Shortage TOTAL FLOAT"]]
 
 def compute_vin_vs_float(
     paint_df: pd.DataFrame,
@@ -1499,13 +2102,13 @@ def build_engine_table(paint_df: pd.DataFrame, line_filter: str) -> pd.DataFrame
     # 1. Initialize master df
     req = pd.DataFrame(ENGINE_MASTER)
     
-    # 2. Group current paint float
+    # 2. Group current paint float — group by ENGINE + LINE only to avoid duplicates
     pf = paint_df.copy()
     pf["ENGINE"] = pf["ENGINE"].astype(str).str.strip()
     pf = pf[pf["ENGINE"].notna() & (pf["ENGINE"].str.len() >= 5)]
     
     pf_agg = (
-        pf.groupby(["ENGINE", "LINE", "MODEL"], as_index=False)
+        pf.groupby(["ENGINE", "LINE"], as_index=False)
         .agg(
             TOTAL_FLOAT=("TOTAL_FLOAT", "sum"),
             PBS_FLOAT=("PBS_FLOAT", "sum"),
@@ -1519,24 +2122,81 @@ def build_engine_table(paint_df: pd.DataFrame, line_filter: str) -> pd.DataFrame
     # 4. Handle any missing data for newly discovered engines
     missing_mask = req["Engine Part No"].isna()
     req.loc[missing_mask, "Engine Part No"] = req.loc[missing_mask, "ENGINE"]
-    
-    # For model description, fallback to Paint Float generic MODEL if it's missing (a new engine)
-    if "MODEL" in req.columns:
-        req["Model"] = req["Model"].fillna(req["MODEL"]).fillna("NEW_ENGINE")
-    else:
-        req["Model"] = req["Model"].fillna("NEW_ENGINE")
+    req["Model"] = req["Model"].fillna("NEW_ENGINE")
     req["TA Code"] = req["TA Code"].fillna("")
     
     req["TOTAL_FLOAT"] = req["TOTAL_FLOAT"].fillna(0).astype(int)
     req["PBS_FLOAT"] = req["PBS_FLOAT"].fillna(0).astype(int)
     req["UPTO_SEALANT"] = req["UPTO_SEALANT"].fillna(0).astype(int)
     
-    req = req.drop(columns=["ENGINE", "MODEL"], errors="ignore")
+    req = req.drop(columns=["ENGINE"], errors="ignore")
     
     if line_filter != "All Lines":
         req = req[req["LINE"] == line_filter]
 
     return req
+
+
+def _build_engine_manual_display(df: pd.DataFrame) -> pd.DataFrame:
+    """Build the manual entry table with subtotal rows for the 4-column editor.
+    
+    Organizes engines by line (TCF1/TCF2) with subtotal rows:
+    - 1.2 Lit engines → '1.2 Lit Total' subtotal
+    - Nova
+    - 'TCF1' total
+    - 2 Lit engines → '2 Lit Total' subtotal
+    - Harrier EV
+    - 'TCF2' total
+    """
+    rows = []
+    num_cols = ["Clearance After 6:30AM"]
+
+    tcf1_order = ["Punch MT SA", "Punch AMT SA", "Punch TC MCE", "Punch MCE MT", "Punch MCE AMT", "Punch MCE CNG MT", "Punch MCE CNG AMT"]
+    tcf2_order = ["Harrier / Safari Diesel AT", "Harrier / Safari Diesel MT", "Harrier / Safari Petrol TGDI MT", "Harrier / Safari Petrol TGDI AT"]
+
+    tcf1_df = df[df["LINE"] == "TCF1"].copy()
+    if not tcf1_df.empty:
+        is_punch = tcf1_df["Model"].str.contains("PUNCH", case=False, na=False)
+        punch_df = tcf1_df[is_punch].copy()
+        other_df = tcf1_df[~is_punch].copy()
+
+        punch_df['SortKey'] = pd.Categorical(punch_df['Model'], categories=tcf1_order, ordered=True)
+        punch_df = punch_df.sort_values('SortKey').drop(columns=['SortKey'])
+
+        rows.extend(punch_df[["Engine Part No", "Model", "TA Code", "Clearance After 6:30AM"]].to_dict('records'))
+        if not punch_df.empty:
+            sub = {"Engine Part No": "", "Model": "1.2 Lit Total", "TA Code": "", "Clearance After 6:30AM": punch_df["Clearance After 6:30AM"].sum()}
+            rows.append(sub)
+
+        rows.extend(other_df[["Engine Part No", "Model", "TA Code", "Clearance After 6:30AM"]].to_dict('records'))
+
+        tcf1_sub = {"Engine Part No": "", "Model": "TCF1", "TA Code": "", "Clearance After 6:30AM": tcf1_df["Clearance After 6:30AM"].sum()}
+        rows.append(tcf1_sub)
+
+    tcf2_df = df[df["LINE"] == "TCF2"].copy()
+    if not tcf2_df.empty:
+        is_2l = tcf2_df["Model"].str.contains("HARRIER", case=False, na=False) | tcf2_df["Model"].str.contains("SAFARI", case=False, na=False)
+        is_ev = tcf2_df["Model"].str.contains("EV", case=False, na=False)
+        is_2l = is_2l & ~is_ev
+
+        l2_df = tcf2_df[is_2l].copy()
+        ev_df = tcf2_df[~is_2l].copy()
+
+        l2_df['SortKey'] = pd.Categorical(l2_df['Model'], categories=tcf2_order, ordered=True)
+        l2_df = l2_df.sort_values('SortKey').drop(columns=['SortKey'])
+
+        rows.extend(l2_df[["Engine Part No", "Model", "TA Code", "Clearance After 6:30AM"]].to_dict('records'))
+        if not l2_df.empty:
+            sub = {"Engine Part No": "", "Model": "2 Lit Total", "TA Code": "", "Clearance After 6:30AM": l2_df["Clearance After 6:30AM"].sum()}
+            rows.append(sub)
+
+        rows.extend(ev_df[["Engine Part No", "Model", "TA Code", "Clearance After 6:30AM"]].to_dict('records'))
+
+        tcf2_sub = {"Engine Part No": "", "Model": "TCF2", "TA Code": "", "Clearance After 6:30AM": tcf2_df["Clearance After 6:30AM"].sum()}
+        rows.append(tcf2_sub)
+
+    return pd.DataFrame(rows)
+
 
 def add_engine_subtotals(df: pd.DataFrame) -> pd.DataFrame:
     rows = []
@@ -1608,9 +2268,9 @@ def highlight_shortage(val):
     except (ValueError, TypeError):
         return ""
     if v < 0:
-        return "background-color: #ffcccc; color: #8b0000; font-weight: 700"
+        return "background-color: #ffe4e6; color: #9f1239; font-weight: 700; border: 1px solid #fecaca;"
     if v == 0:
-        return "background-color: #fff3cd; color: #856404; font-weight: 600"
+        return "background-color: #fef3c7; color: #b45309; font-weight: 600; border: 1px solid #fde68a;"
     return ""
 
 
@@ -1623,10 +2283,12 @@ def style_shortage_df(df: pd.DataFrame, table_type="wiring"):
     styles = {}
     for i, col in enumerate(df.columns):
         if table_type in ["wiring", "cockpit", "engine"]:
-            color = '#F4B084' if i < 3 else '#9BC2E6'
+            bg_color = '#475569' if i < 3 else '#1e3a8a'
+            text_color = '#ffffff'
         else:
-            color = '#D9E1F2'
-        styles[col] = [{'selector': 'th', 'props': [('background-color', color), ('color', 'black'), ('border', '1px solid #94a3b8')]}]
+            bg_color = '#334155'
+            text_color = '#ffffff'
+        styles[col] = [{'selector': 'th', 'props': [('background-color', bg_color), ('color', text_color), ('font-weight', '700'), ('border', '1px solid #e2e8f0'), ('padding', '10px 14px')]}]
     
     styler = styler.set_table_styles(styles, overwrite=False)
     
@@ -1634,6 +2296,386 @@ def style_shortage_df(df: pd.DataFrame, table_type="wiring"):
         styler = styler.map(highlight_shortage, subset=shortage_cols)
         
     return styler
+
+
+def render_html_table(df: pd.DataFrame) -> str:
+    """Build premium HTML table for Model Wise Float summary with wrapped headers and fit-to-page styling."""
+    html = '<table class="model-wise-table">'
+    
+    # Headers
+    html += '<thead><tr>'
+    for col in df.columns:
+        wrapped_col = str(col)
+        # Wrap long column names to narrower lines
+        if "TO WETSANDING" in wrapped_col:
+            wrapped_col = wrapped_col.replace("TO WETSANDING ", "TO<br>WETSANDING<br>")
+        elif "WETSANDING TO" in wrapped_col:
+            wrapped_col = wrapped_col.replace("WETSANDING TO ", "WETSANDING<br>TO<br>")
+        elif "POLISHING TO" in wrapped_col:
+            wrapped_col = wrapped_col.replace("POLISHING TO ", "POLISHING<br>TO<br>")
+        elif "PBS TO" in wrapped_col:
+            wrapped_col = wrapped_col.replace("PBS TO ", "PBS<br>TO<br>")
+        elif "TOTAL UPTO" in wrapped_col:
+            wrapped_col = wrapped_col.replace("TOTAL UPTO ", "TOTAL<br>UPTO<br>")
+        elif "ENTRY TO" in wrapped_col:
+            wrapped_col = wrapped_col.replace("ENTRY TO ", "ENTRY<br>TO<br>")
+        elif "LIFTING TO" in wrapped_col:
+            wrapped_col = wrapped_col.replace("LIFTING TO ", "LIFTING<br>TO<br>")
+        elif "TOTAL FLOAT" in wrapped_col:
+            wrapped_col = wrapped_col.replace("TOTAL FLOAT", "TOTAL<br>FLOAT")
+        elif "PBS FLOAT" in wrapped_col:
+            wrapped_col = wrapped_col.replace("PBS FLOAT", "PBS<br>FLOAT")
+        elif "Today VIN" in wrapped_col:
+            wrapped_col = wrapped_col.replace("Today VIN", "Today<br>VIN")
+        elif "Paint Float" in wrapped_col:
+            wrapped_col = wrapped_col.replace("Paint Float", "Paint<br>Float")
+        
+        html += f'<th>{wrapped_col}</th>'
+    html += '</tr></thead>'
+    
+    # Body
+    html += '<tbody>'
+    for _, row in df.iterrows():
+        model_val = str(row.get("MODEL", "")).upper()
+        if "GRAND TOTAL" in model_val:
+            row_class = 'class="grand-total"'
+        elif "TOTAL" in model_val:
+            row_class = 'class="line-total"'
+        else:
+            row_class = ''
+            
+        html += f'<tr {row_class}>'
+        for col in df.columns:
+            val = row[col]
+            if isinstance(val, (int, float)):
+                if pd.isna(val):
+                    val_str = ""
+                elif val == int(val):
+                    val_str = f"{int(val):,}"
+                else:
+                    val_str = f"{val:,.1f}"
+            else:
+                val_str = str(val) if not pd.isna(val) else ""
+            html += f'<td>{val_str}</td>'
+        html += '</tr>'
+    html += '</tbody>'
+    
+    html += '</table>'
+    return html
+
+
+def render_shortage_html_table(df: pd.DataFrame, table_type="wiring") -> str:
+    """Build premium HTML table for Wiring and Cockpit shortage reports with peach/blue headers, wrapped text, and double vertical divider lines."""
+    plot_df = df.copy()
+    
+    if "Today VIN" in plot_df.columns:
+        plot_df = plot_df.drop(columns=["Today VIN"], errors="ignore")
+        
+    if table_type == "cockpit":
+        plot_df = plot_df.rename(columns={
+            "Model/Line": "Model",
+            "Cabs FloatUPTO SEALANT": "Cabs Float UPTO SEALANT",
+            "Shortage for TOTAL FLOAT": "Shortage TOTAL FLOAT"
+        })
+
+    # Wrap headers
+    wrapped_headers = []
+    for c in plot_df.columns:
+        col_name = str(c)
+        if "Part Number" in col_name:
+            wrapped_headers.append(col_name.replace(" Part Number", "<br>Part Number"))
+        elif "Clearance After" in col_name:
+            wrapped_headers.append("Clearance<br>After<br>6:30AM")
+        elif "Paint TOTAL" in col_name:
+            wrapped_headers.append("Paint TOTAL<br>FLOAT")
+        elif "PBS FLOAT" in col_name:
+            wrapped_headers.append("PBS<br>FLOAT")
+        elif "Cabs Float" in col_name:
+            wrapped_headers.append("Cabs Float<br>UPTO<br>SEALANT")
+        elif "Shortage PBS" in col_name:
+            wrapped_headers.append("Shortage PBS<br>FLOAT")
+        elif "Upto Sealant" in col_name:
+            wrapped_headers.append("Shortage<br>Upto<br>Sealant")
+        elif "TOTAL FLOAT" in col_name:
+            if "Shortage for" in col_name:
+                wrapped_headers.append("Shortage<br>for TOTAL<br>FLOAT")
+            else:
+                wrapped_headers.append("Shortage<br>TOTAL<br>FLOAT")
+        else:
+            wrapped_headers.append(col_name)
+
+    shortage_cols = [c for c in plot_df.columns if "Shortage" in str(c)]
+
+    html = '<div style="width: 100%; overflow-x: auto; border-radius: 12px; border: 1px solid #cbd5e1;">'
+    html += '<table class="model-wise-table">'
+    
+    # Headers
+    html += '<thead><tr>'
+    for idx, col in enumerate(wrapped_headers):
+        # Peach for first 3 columns, blue for remaining
+        bg_color = "#F8CBAD" if idx < 3 else "#BDD7EE"
+        text_color = "#000000"
+        
+        # Double right border for columns 3 and 6
+        border_right = "3px double #000000" if idx in [2, 5] else "1px solid #cbd5e1"
+        
+        html += f'<th style="background-color: {bg_color} !important; color: {text_color} !important; border-right: {border_right} !important;">{col}</th>'
+    html += '</tr></thead>'
+    
+    # Body
+    html += '<tbody>'
+    for _, row in plot_df.iterrows():
+        html += '<tr>'
+        for idx, col in enumerate(plot_df.columns):
+            val = row[col]
+            bg = "#ffffff"
+            tc = "#000000"
+            font_weight = "normal"
+            
+            if isinstance(val, (int, float)):
+                if pd.isna(val):
+                    val_str = ""
+                elif val == int(val):
+                    val_str = f"{int(val):,}"
+                else:
+                    val_str = f"{val:,.1f}"
+                
+                if col in shortage_cols and val < 0:
+                    bg = "#FCE4D6"
+                    tc = "#C00000"
+                    font_weight = "bold"
+            else:
+                val_str = str(val) if not pd.isna(val) else ""
+            
+            border_right = "3px double #000000" if idx in [2, 5] else "1px solid #cbd5e1"
+            
+            html += f'<td style="background-color: {bg} !important; color: {tc} !important; font-weight: {font_weight} !important; border-right: {border_right} !important;">{val_str}</td>'
+        html += '</tr>'
+    html += '</tbody>'
+    html += '</table></div>'
+    return html
+
+
+def render_engine_html_table(df: pd.DataFrame) -> str:
+    """Build premium HTML table for Engine & Battery summary with custom row grouping colors and highlights."""
+    plot_df = df.copy()
+    
+    if "LINE" in plot_df.columns:
+        plot_df = plot_df.drop(columns=["LINE"], errors="ignore")
+
+    wrapped_headers = []
+    for c in plot_df.columns:
+        col_name = str(c)
+        if "Part No" in col_name:
+            wrapped_headers.append("Engine<br>Part No")
+        elif "Clearance After" in col_name:
+            wrapped_headers.append("Clearance<br>After<br>6:30AM")
+        elif "Today VIN" in col_name:
+            wrapped_headers.append("Today<br>VIN")
+        elif "PBS FLOAT" in col_name:
+            wrapped_headers.append("PBS<br>FLOAT")
+        elif "UPTO SEALANT" in col_name:
+            wrapped_headers.append("Float UPTO<br>SEALANT")
+        elif "TOTAL FLOAT" in col_name:
+            wrapped_headers.append("TOTAL<br>FLOAT")
+        elif "With respect to" in col_name:
+            wrapped_headers.append(col_name.replace("With respect to ", "w.r.t.<br>"))
+        else:
+            wrapped_headers.append(col_name)
+
+    shortage_cols = [c for c in plot_df.columns if "respect to" in str(c)]
+
+    html = '<div style="width: 100%; overflow-x: auto; border-radius: 12px; border: 1px solid #cbd5e1;">'
+    html += '<table class="model-wise-table">'
+    
+    # Headers
+    html += '<thead><tr>'
+    for col in wrapped_headers:
+        html += f'<th>{col}</th>'
+    html += '</tr></thead>'
+    
+    # Body
+    html += '<tbody>'
+    for _, row in plot_df.iterrows():
+        model_val = str(row.get("Model", ""))
+        
+        if "Total" in model_val:
+            row_style = 'style="background-color: #e2f0d9 !important; font-weight: 700 !important; color: #1e3a8a !important;"'
+        elif model_val in ["TCF1", "TCF2"]:
+            row_style = 'style="background-color: #fff2cc !important; font-weight: 800 !important; color: #b45309 !important;"'
+        elif "GRAND TOTAL" in model_val.upper() or "GRAND" in model_val.upper():
+            row_style = 'style="background-color: #dcfce7 !important; font-weight: 800 !important; color: #0f5132 !important;"'
+        else:
+            row_style = ''
+            
+        html += f'<tr {row_style}>'
+        for col in plot_df.columns:
+            val = row[col]
+            bg = ""
+            tc = ""
+            font_weight = ""
+            
+            if isinstance(val, (int, float)):
+                if pd.isna(val):
+                    val_str = ""
+                elif val == int(val):
+                    val_str = f"{int(val):,}"
+                else:
+                    val_str = f"{val:,.1f}"
+                
+                if col in shortage_cols and val < 0 and "Total" not in model_val and model_val not in ["TCF1", "TCF2"]:
+                    bg = "background-color: #FCE4D6 !important;"
+                    tc = "color: #C00000 !important;"
+                    font_weight = "font-weight: bold !important;"
+            else:
+                val_str = str(val) if not pd.isna(val) else ""
+                
+            cell_style = f'style="{bg} {tc} {font_weight}"' if (bg or tc or font_weight) else ''
+            html += f'<td {cell_style}>{val_str}</td>'
+        html += '</tr>'
+    html += '</tbody>'
+    html += '</table></div>'
+    return html
+
+
+def render_vin_float_html_table(df: pd.DataFrame) -> str:
+    """Build premium HTML table for VIN vs Paint Float shortages with styled headers and status highlights."""
+    plot_df = df.copy()
+
+    wrapped_headers = []
+    for c in plot_df.columns:
+        col_name = str(c)
+        if "Short VC" in col_name:
+            wrapped_headers.append("Short<br>VC")
+        elif "Sales Description" in col_name:
+            wrapped_headers.append("Sales<br>Description")
+        elif "DPT Plan" in col_name:
+            wrapped_headers.append("DPT<br>Plan")
+        elif "Today VIN" in col_name:
+            wrapped_headers.append("Today VIN<br>(DPT)")
+        elif "TOTAL Float" in col_name:
+            wrapped_headers.append("TOTAL<br>Float")
+        elif "PBS Float" in col_name:
+            wrapped_headers.append("PBS<br>Float")
+        elif "Upto Sealant" in col_name:
+            wrapped_headers.append("Upto<br>Sealant")
+        elif "BIW" in col_name:
+            wrapped_headers.append("BIW→PT")
+        elif "PT" in col_name and "?" in col_name:
+            wrapped_headers.append("PT→Sealant")
+        elif "Shortage vs" in col_name:
+            wrapped_headers.append(col_name.replace("Shortage vs ", "Shortage vs<br>"))
+        else:
+            wrapped_headers.append(col_name)
+
+    shortage_cols = [c for c in plot_df.columns if "Shortage" in str(c)]
+
+    html = '<div style="width: 100%; overflow-x: auto; border-radius: 12px; border: 1px solid #cbd5e1;">'
+    html += '<table class="model-wise-table">'
+    
+    # Headers
+    html += '<thead><tr>'
+    for col in wrapped_headers:
+        html += f'<th>{col}</th>'
+    html += '</tr></thead>'
+    
+    # Body
+    html += '<tbody>'
+    for _, row in plot_df.iterrows():
+        html += '<tr>'
+        for col in plot_df.columns:
+            val = row[col]
+            bg = ""
+            tc = ""
+            font_weight = ""
+            
+            if isinstance(val, (int, float)):
+                if pd.isna(val):
+                    val_str = ""
+                elif val == int(val):
+                    val_str = f"{int(val):,}"
+                else:
+                    val_str = f"{val:,.1f}"
+                
+                if col in shortage_cols:
+                    if val < 0:
+                        bg = "background-color: #fee2e2 !important;"
+                        tc = "color: #991b1b !important;"
+                        font_weight = "font-weight: 700 !important;"
+                    elif val == 0:
+                        bg = "background-color: #fef3c7 !important;"
+                        tc = "color: #b45309 !important;"
+                        font_weight = "font-weight: 600 !important;"
+                    else:
+                        bg = "background-color: #dcfce7 !important;"
+                        tc = "color: #166534 !important;"
+                        
+                if col == "Today VIN (DPT)":
+                    bg = "background-color: #dbeafe !important;"
+                    tc = "color: #1d4ed8 !important;"
+                    font_weight = "font-weight: 600 !important;"
+            else:
+                val_str = str(val) if not pd.isna(val) else ""
+                
+            cell_style = f'style="{bg} {tc} {font_weight}"' if (bg or tc or font_weight) else ''
+            html += f'<td {cell_style}>{val_str}</td>'
+        html += '</tr>'
+    html += '</tbody>'
+    html += '</table></div>'
+    return html
+
+
+def render_vin_float_summary_html_table(df: pd.DataFrame) -> str:
+    """Build premium HTML table for Model-Wise summary in VIN vs Float tab."""
+    plot_df = df.copy()
+
+    wrapped_headers = []
+    for c in plot_df.columns:
+        col_name = str(c)
+        if "DPT Plan" in col_name:
+            wrapped_headers.append("DPT<br>Plan")
+        elif "Today VIN" in col_name:
+            wrapped_headers.append("Today<br>VIN")
+        elif "TOTAL Float" in col_name:
+            wrapped_headers.append("TOTAL<br>Float")
+        elif "PBS Float" in col_name:
+            wrapped_headers.append("PBS<br>Float")
+        elif "Upto Sealant" in col_name:
+            wrapped_headers.append("Upto<br>Sealant")
+        elif "Shortage vs" in col_name:
+            wrapped_headers.append(col_name.replace("Shortage vs ", "Shortage vs<br>"))
+        else:
+            wrapped_headers.append(col_name)
+
+    html = '<div style="width: 100%; overflow-x: auto; border-radius: 12px; border: 1px solid #cbd5e1;">'
+    html += '<table class="model-wise-table">'
+    
+    # Headers
+    html += '<thead><tr>'
+    for col in wrapped_headers:
+        html += f'<th>{col}</th>'
+    html += '</tr></thead>'
+    
+    # Body
+    html += '<tbody>'
+    for _, row in plot_df.iterrows():
+        html += '<tr>'
+        for col in plot_df.columns:
+            val = row[col]
+            if isinstance(val, (int, float)):
+                if pd.isna(val):
+                    val_str = ""
+                elif val == int(val):
+                    val_str = f"{int(val):,}"
+                else:
+                    val_str = f"{val:,.1f}"
+            else:
+                val_str = str(val) if not pd.isna(val) else ""
+            html += f'<td>{val_str}</td>'
+        html += '</tr>'
+    html += '</tbody>'
+    html += '</table></div>'
+    return html
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1652,6 +2694,8 @@ def main():
     # ── Daily 6:30 AM Reset ──
     reset_performed = check_and_perform_daily_reset()
     if reset_performed:
+        if "engine_editor_df" in st.session_state:
+            del st.session_state["engine_editor_df"]
         st.toast("🔄 Daily 6:30 AM reset completed — all uploaded data cleared.", icon="🔄")
         st.rerun()
 
@@ -1756,13 +2800,49 @@ def main():
             missing_bom_vcs = sorted(list(active_vcs - bom_vcs))
 
     # ═══════════════════════════════════════════
-    # HEADER
+    # HEADER & LIVE STATUS BADGES
     # ═══════════════════════════════════════════
+    active_files_count = 0
+    for ft in RAW_FILE_TYPES:
+        src_type, _ = get_source(ft)
+        if src_type is not None:
+            active_files_count += 1
+
+    status_badges = []
+    # Badge 1: Line Selection
+    status_badges.append(
+        f'<span class="status-badge status-badge-blue">📍 {line_filter}</span>'
+    )
+    # Badge 2: Data channel status
+    if active_files_count == len(RAW_FILE_TYPES):
+        status_badges.append(
+            '<span class="status-badge status-badge-green">● All Channels Active (9/9)</span>'
+        )
+    elif active_files_count > 0:
+        status_badges.append(
+            f'<span class="status-badge status-badge-amber">● Active Channels ({active_files_count}/9)</span>'
+        )
+    else:
+        status_badges.append(
+            '<span class="status-badge status-badge-amber">● No Data Channels</span>'
+        )
+
+    # Badge 3: Reset Countdown
+    next_reset = now.replace(hour=RESET_HOUR, minute=RESET_MINUTE, second=0, microsecond=0)
+    if now >= next_reset:
+        next_reset = next_reset + timedelta(days=1)
+    mins_to_reset = int((next_reset - now).total_seconds() / 60)
+    status_badges.append(
+        f'<span class="status-badge">⏱️ Daily Reset in {mins_to_reset} min</span>'
+    )
+
+    status_badges_html = f'<div class="status-container">{" ".join(status_badges)}</div>'
+
     st.markdown(
         '<div class="dash-header">'
         "<h1>🏭 TCF Production Planning Dashboard</h1>"
-        f"<p>Live shortage monitoring &nbsp;·&nbsp; Line: <b>{line_filter}</b> "
-        f"&nbsp;·&nbsp; Data as of {get_ist_now().strftime('%d %b %Y, %H:%M')}</p>"
+        f"<p>Live shortage monitoring &nbsp;·&nbsp; Data as of {get_ist_now().strftime('%d %b %Y, %H:%M')}</p>"
+        f"{status_badges_html}"
         "</div>",
         unsafe_allow_html=True,
     )
@@ -1809,12 +2889,11 @@ def main():
         else:
             # KPI row
             pf_filtered = paint_df if line_filter == "All Lines" else paint_df[paint_df["LINE"] == line_filter]
-            c1, c2, c3, c4, c5 = st.columns(5)
+            c1, c2, c3, c4 = st.columns(4)
             c1.metric("Total Float", f"{int(pf_filtered['TOTAL_FLOAT'].sum()):,}")
             c2.metric("PBS Float", f"{int(pf_filtered['PBS_FLOAT'].sum()):,}")
             c3.metric("Upto Sealant", f"{int(pf_filtered['TOTAL_UPTO_SEALANT'].sum()):,}")
             c4.metric("BIW→PT", f"{int(pf_filtered['BIW_LIFTING_TO_PT'].sum()):,}")
-            c5.metric("Variants", f"{len(pf_filtered):,}")
 
             st.markdown("")
 
@@ -1822,26 +2901,14 @@ def main():
             if not model_df.empty:
 
 
-                # Highlight total rows
-                def style_total_row(row):
-                    model_name = str(row.get("MODEL", "")).upper()
-                    if "GRAND TOTAL" in model_name:
-                        return ["background-color: #dcfce7; color: #0f5132; font-weight:800"] * len(row)
-                    elif "TOTAL" in model_name:
-                        return ["background-color: #e0e7ff; color: #1e3a8a; font-weight:700"] * len(row)
-                    return [""] * len(row)
-
-                styled = model_df.style
-                
-                # Apply generic header styles to match other tables
-                styles = {col: [{'selector': 'th', 'props': [('background-color', '#D9E1F2'), ('color', 'black'), ('border', '1px solid #94a3b8')]}] for col in model_df.columns}
-                styled = styled.set_table_styles(styles, overwrite=False).apply(style_total_row, axis=1)
-                
-                st.dataframe(styled, use_container_width=True, hide_index=True, height=450)
+                # Render using custom HTML table to wrap headers and fit container width without horizontal scroll
+                html_table = render_html_table(model_df)
+                st.markdown(html_table, unsafe_allow_html=True)
+                st.markdown("")
 
                 st.download_button(
                     "📥  Download Model Wise Float",
-                    to_excel(styled, "Model Wise Float", table_type="generic"),
+                    to_excel(model_df, "Model Wise Float", table_type="generic"),
                     file_name=f"model_wise_float_{get_ist_now().strftime('%Y%m%d')}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 )
@@ -1853,7 +2920,7 @@ def main():
     # ─────────────────────────────────────────
     with tab2:
         st.markdown('<div class="section-title">Engine & Battery Summary — Manual Stock Entry</div>', unsafe_allow_html=True)
-        st.caption("Edit the **Stock w/ Transit** and **Clearance 6:30AM** columns below. Your entries are saved automatically.")
+        st.caption("Enter **Clearance After 6:30AM** values below. Your entries are saved automatically.")
 
         if not bom_loaded:
             st.info("💡 **BOM details.xlsx** is missing or empty. Please go to the **🔄 File Status & Update** tab to upload it.")
@@ -1876,75 +2943,75 @@ def main():
                     dpt_agg = dpt[dpt["ENGINE"].str.len() >= 5].groupby("ENGINE", as_index=False)["DPT_VIN"].sum()
                     today_engine_vin = dict(zip(dpt_agg["ENGINE"], dpt_agg["DPT_VIN"]))
 
-                # Build editable dataframe
+                # Build clearance column from saved data
                 engine_req["Clearance After 6:30AM"] = engine_req["Engine Part No"].map(lambda e: saved.get(e, {}).get("clearance", 0))
                 engine_req["Today VIN"] = engine_req["Engine Part No"].map(
                     lambda e: today_engine_vin.get(e, saved.get(e, {}).get("today_vin", 0))
                 )
 
-                display_engine = engine_req[[
-                    "Engine Part No", "Model", "TA Code", "Clearance After 6:30AM", "Today VIN", 
-                    "PBS_FLOAT", "UPTO_SEALANT", "TOTAL_FLOAT", "LINE"
-                ]].rename(columns={
-                    "PBS_FLOAT": "PBS FLOAT",
-                    "UPTO_SEALANT": "Float UPTO SEALANT",
-                    "TOTAL_FLOAT": "TOTAL FLOAT"
-                })
+                # Manual Entry Editor (only real engine rows, no subtotals)
+                st.markdown("#### ✏️ Manual Clearance Entry")
 
-                edited = st.data_editor(
-                    display_engine,
-                    use_container_width=True,
-                    hide_index=True,
-                    num_rows="fixed",
-                    disabled=["Engine Part No", "PBS FLOAT", "Float UPTO SEALANT", "TOTAL FLOAT", "LINE"],
-                    column_config={
-                        "Clearance After 6:30AM": st.column_config.NumberColumn("Clearance After 6:30AM", min_value=0, step=1),
-                        "Today VIN": st.column_config.NumberColumn("Today VIN", min_value=0, step=1),
-                    },
-                    key="engine_editor",
-                )
+                # Sort engines in the desired order (TCF1 Punch, Nova, TCF2 Diesel, EV)
+                tcf1_order = ["Punch MT SA", "Punch AMT SA", "Punch TC MCE", "Punch MCE MT", "Punch MCE AMT", "Punch MCE CNG MT", "Punch MCE CNG AMT"]
+                tcf2_order = ["Harrier / Safari Diesel AT", "Harrier / Safari Diesel MT", "Harrier / Safari Petrol TGDI MT", "Harrier / Safari Petrol TGDI AT"]
+                full_order = tcf1_order + ["Nova"] + tcf2_order + ["Harrier EV"]
 
-                # Auto-save on every edit
-                new_saved = {}
-                for _, row in edited.iterrows():
-                    ep = row["Engine Part No"]
-                    new_saved[ep] = {
-                        "model": row.get("Model", ""),
-                        "ta_code": row.get("TA Code", ""),
-                        "clearance": int(row.get("Clearance After 6:30AM", 0) or 0),
-                        "today_vin": int(row.get("Today VIN", 0) or 0),
-                    }
-                save_engine_json(new_saved)
+                editor_df = engine_req[["Engine Part No", "Model", "TA Code", "Clearance After 6:30AM"]].copy()
+                editor_df["_sort"] = editor_df["Model"].map(lambda m: full_order.index(m) if m in full_order else 999)
+                editor_df = editor_df.sort_values("_sort").drop(columns=["_sort"]).reset_index(drop=True)
 
-                # Compute shortage
-                result = edited.copy()
+                # Initialize or update the editor dataframe in session state for stability
+                should_init = False
+                if "engine_editor_df" not in st.session_state:
+                    should_init = True
+                else:
+                    current_df = st.session_state["engine_editor_df"]
+                    if len(current_df) != len(editor_df):
+                        should_init = True
+                    elif not (current_df["Engine Part No"].values == editor_df["Engine Part No"].values).all():
+                        should_init = True
+
+                if should_init:
+                    st.session_state["engine_editor_df"] = editor_df
+
+                # Render button to open modal pop-up
+                st.markdown("#### ✏️ Manual Clearance Entry")
+                if st.button("📝 Open Manual Entry Sheet", type="primary", help="Click to open the manual entry sheet in a pop-up window."):
+                    open_manual_entry_popup(st.session_state["engine_editor_df"])
+
+                # Computed Shortage Table
+                st.markdown('<div class="section-title">Computed Shortage</div>', unsafe_allow_html=True)
+
+                result = engine_req[[
+                    "Engine Part No", "Model", "TA Code", "Clearance After 6:30AM", "LINE"
+                ]].copy()
+                result["Today VIN"] = engine_req["Today VIN"]
                 result["Bal"] = result["Clearance After 6:30AM"] - result["Today VIN"]
+                result["PBS FLOAT"] = engine_req["PBS_FLOAT"]
+                result["Float UPTO SEALANT"] = engine_req["UPTO_SEALANT"]
+                result["TOTAL FLOAT"] = engine_req["TOTAL_FLOAT"]
                 result["With respect to PBS FLOAT"] = result["Bal"] - result["PBS FLOAT"]
                 result["With respect to Sealant FLOAT"] = result["Bal"] - result["Float UPTO SEALANT"]
                 result["With respect to Total FLOAT"] = result["Bal"] - result["TOTAL FLOAT"]
 
-                st.markdown('<div class="section-title">Computed Shortage</div>', unsafe_allow_html=True)
-                
-                # Rearrange final columns and inject subtotals
                 result = result[[
                     "Engine Part No", "Model", "TA Code", "Clearance After 6:30AM", "Today VIN", "Bal",
                     "PBS FLOAT", "Float UPTO SEALANT", "TOTAL FLOAT",
                     "With respect to PBS FLOAT", "With respect to Sealant FLOAT", "With respect to Total FLOAT", "LINE"
                 ]]
-                
+
                 result = add_engine_subtotals(result)
 
                 # KPI for engine (exclude subtotal rows from count and sum)
                 real_result = result[result["Engine Part No"].notna() & (result["Engine Part No"] != "")]
                 total_short = real_result["With respect to Total FLOAT"].sum()
                 crit = (real_result["With respect to Total FLOAT"] < 0).sum()
-                ec1, ec2, ec3 = st.columns(3)
-                ec1.metric("Engine Variants", len(real_result))
+                ec2, ec3 = st.columns(2)
                 ec2.metric("Critical Shortages", crit, delta=f"-{crit}" if crit else "0", delta_color="inverse")
                 ec3.metric("Net Balance (Total)", int(total_short))
-
-                styled_eng = style_shortage_df(result, table_type="generic")
-                st.dataframe(styled_eng, use_container_width=True, hide_index=True, height=400)
+                st.markdown(render_engine_html_table(result), unsafe_allow_html=True)
+                st.markdown("")
 
                 st.download_button(
                     "📥  Download Engine Summary",
@@ -1990,16 +3057,26 @@ def main():
                 display_df = wiring_summary.copy()
                 if show_only_short:
                     display_df = display_df[display_df["Shortage for TOTAL FLOAT"] < 0]
+                st.markdown(render_shortage_html_table(display_df, "wiring"), unsafe_allow_html=True)
+                st.markdown("")
 
-                styled_w = style_shortage_df(display_df, table_type="wiring")
-                st.dataframe(styled_w, use_container_width=True, hide_index=True, height=500)
-
-                st.download_button(
-                    "📥  Download Wiring Shortage Report",
-                    to_excel(styled_w, "Wiring Summary", table_type="wiring"),
-                    file_name=f"wiring_summary_{get_ist_now().strftime('%Y%m%d')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                )
+                col_dl1, col_dl2 = st.columns(2)
+                with col_dl1:
+                    st.download_button(
+                        "📥  Download Excel",
+                        to_excel(display_df, "Wiring Summary", table_type="wiring"),
+                        file_name=f"wiring_summary_{get_ist_now().strftime('%Y%m%d')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                    )
+                with col_dl2:
+                    st.download_button(
+                        "🖼️  Download Image (PNG)",
+                        export_df_to_image(display_df, table_type="wiring"),
+                        file_name=f"wiring_summary_{get_ist_now().strftime('%Y%m%d')}.png",
+                        mime="image/png",
+                        use_container_width=True,
+                    )
 
     # ─────────────────────────────────────────
     # TAB 4 — COCKPIT ASSEMBLY SUMMARY
@@ -2021,9 +3098,9 @@ def main():
             else:
                 # KPIs
                 total_cp = len(cockpit_summary)
-                crit_cp = (cockpit_summary["Shortage for TOTAL FLOAT"] < 0).sum()
-                marg_cp = (cockpit_summary["Shortage for TOTAL FLOAT"] == 0).sum()
-                ok_cp = (cockpit_summary["Shortage for TOTAL FLOAT"] > 0).sum()
+                crit_cp = (cockpit_summary["Shortage TOTAL FLOAT"] < 0).sum()
+                marg_cp = (cockpit_summary["Shortage TOTAL FLOAT"] == 0).sum()
+                ok_cp = (cockpit_summary["Shortage TOTAL FLOAT"] > 0).sum()
 
                 cc1, cc2, cc3, cc4 = st.columns(4)
                 cc1.metric("Total Parts", total_cp)
@@ -2037,17 +3114,27 @@ def main():
                 show_only_short = st.checkbox("🔴 Show only parts with shortages (Shortage < 0)", key="cockpit_shortage_filter")
                 display_df = cockpit_summary.copy()
                 if show_only_short:
-                    display_df = display_df[display_df["Shortage for TOTAL FLOAT"] < 0]
+                    display_df = display_df[display_df["Shortage TOTAL FLOAT"] < 0]
+                st.markdown(render_shortage_html_table(display_df, "cockpit"), unsafe_allow_html=True)
+                st.markdown("")
 
-                styled_c = style_shortage_df(display_df, table_type="cockpit")
-                st.dataframe(styled_c, use_container_width=True, hide_index=True, height=500)
-
-                st.download_button(
-                    "📥  Download Cockpit Shortage Report",
-                    to_excel(styled_c, "Cockpit Summary", table_type="cockpit"),
-                    file_name=f"cockpit_summary_{get_ist_now().strftime('%Y%m%d')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                )
+                col_dl1, col_dl2 = st.columns(2)
+                with col_dl1:
+                    st.download_button(
+                        "📥  Download Excel",
+                        to_excel(display_df, "Cockpit Summary", table_type="cockpit"),
+                        file_name=f"cockpit_summary_{get_ist_now().strftime('%Y%m%d')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        use_container_width=True,
+                    )
+                with col_dl2:
+                    st.download_button(
+                        "🖼️  Download Image (PNG)",
+                        export_df_to_image(display_df, table_type="cockpit"),
+                        file_name=f"cockpit_summary_{get_ist_now().strftime('%Y%m%d')}.png",
+                        mime="image/png",
+                        use_container_width=True,
+                    )
 
     # ─────────────────────────────────────────
     # TAB 5 — VIN vs FLOAT SHORTAGE
@@ -2079,8 +3166,7 @@ def main():
                 crit_pbs     = (vin_float_df["Shortage vs PBS Float"] < 0).sum()
                 crit_seal    = (vin_float_df["Shortage vs Upto Sealant"] < 0).sum()
 
-                k1, k2, k3, k4, k5, k6 = st.columns(6)
-                k1.metric("Variants",      total_vc)
+                k2, k3, k4, k5, k6 = st.columns(5)
                 k2.metric("DPT Plan",      f"{total_plan:,}")
                 k3.metric("Today VIN",     f"{total_vin:,}")
                 k4.metric("🔴 vs PBS",     crit_pbs,   delta=f"-{crit_pbs}"   if crit_pbs   else "0", delta_color="inverse")
@@ -2094,12 +3180,18 @@ def main():
                     styled = df.style
                     shortage_cols = ["Shortage vs PBS Float", "Shortage vs Upto Sealant", "Shortage vs TOTAL Float"]
 
+                    # Set custom headers
+                    styles = {}
+                    for col in df.columns:
+                        styles[col] = [{'selector': 'th', 'props': [('background-color', '#334155'), ('color', 'white'), ('font-weight', '700'), ('border', '1px solid #e2e8f0'), ('padding', '10px 14px')]}]
+                    styled = styled.set_table_styles(styles, overwrite=False)
+
                     def _color(val):
                         try:
                             v = float(val)
-                            if v < 0:  return "background-color:#fee2e2; color:#991b1b; font-weight:700"
-                            if v == 0: return "background-color:#fef9c3; color:#854d0e"
-                            return "background-color:#dcfce7; color:#166534"
+                            if v < 0:  return "background-color:#fee2e2; color:#991b1b; font-weight:700; border: 1px solid #fecaca;"
+                            if v == 0: return "background-color:#fef3c7; color:#b45309; font-weight:600; border: 1px solid #fde68a;"
+                            return "background-color:#dcfce7; color:#166534;"
                         except:
                             return ""
 
@@ -2110,13 +3202,13 @@ def main():
                     # DPT VIN column highlight
                     if "Today VIN (DPT)" in df.columns:
                         styled = getattr(styled, "map", getattr(styled, "applymap", None))(
-                            lambda v: "background-color:#dbeafe; color:#1e3a8a; font-weight:600",
+                            lambda v: "background-color:#dbeafe; color:#1d4ed8; font-weight:600; border: 1px solid #bfdbfe;",
                             subset=["Today VIN (DPT)"]
                         )
                     return styled
 
-                styled_vf = _style_vin_float(vin_float_df)
-                st.dataframe(styled_vf, use_container_width=True, hide_index=True, height=520)
+                st.markdown(render_vin_float_html_table(vin_float_df), unsafe_allow_html=True)
+                st.markdown("")
 
                 # Model-wise summary table
                 st.markdown('<div class="section-title">Model-Wise Summary</div>', unsafe_allow_html=True)
@@ -2144,7 +3236,8 @@ def main():
                         "Short_Total":     "Shortage vs Total",
                     })
                 )
-                st.dataframe(model_summary, use_container_width=True, hide_index=True)
+                st.markdown(render_vin_float_summary_html_table(model_summary), unsafe_allow_html=True)
+                st.markdown("")
 
                 st.download_button(
                     "📥  Download VIN vs Float",
@@ -2163,71 +3256,92 @@ def main():
             "and view the system auto-reset status."
         )
 
-        col_status, col_upload = st.columns([1, 1])
+        # ── 1. Unified Reset & System Banner ──
+        next_reset = now.replace(hour=RESET_HOUR, minute=RESET_MINUTE, second=0, microsecond=0)
+        if now >= next_reset:
+            next_reset = next_reset + timedelta(days=1)
+        mins_to_reset = int((next_reset - now).total_seconds() / 60)
 
-        with col_status:
-            st.markdown("### 📋 Current File Status")
-            
-            # Next Reset Countdown
-            next_reset = now.replace(hour=RESET_HOUR, minute=RESET_MINUTE, second=0, microsecond=0)
-            if now >= next_reset:
-                from datetime import timedelta
-                next_reset = next_reset + timedelta(days=1)
-            mins_to_reset = int((next_reset - now).total_seconds() / 60)
-            
+        c_info, c_reset = st.columns([3, 1])
+        with c_info:
             st.info(f"⏱️ **Next Auto-Reset**: in **{mins_to_reset} min** (at 6:30 AM). All uploaded data will be cleared.")
+        with c_reset:
+            if st.button("🔄 Manual Daily Reset", use_container_width=True, help="Clear all manually uploaded files and JSON stocks."):
+                _perform_reset()
+                now = get_ist_now()
+                _save_last_reset(now.strftime("%Y-%m-%d"))
+                if "engine_editor_df" in st.session_state:
+                    del st.session_state["engine_editor_df"]
+                st.success("✅ Reset complete — all uploads and caches cleared!")
+                st.cache_data.clear()
+                st.rerun()
 
-            # File Status Badges using get_source
-            for ft in RAW_FILE_TYPES:
-                src_type, src_path = get_source(ft)
-                if src_type == "uploaded":
-                    mtime = datetime.fromtimestamp(os.path.getmtime(src_path), tz=timezone.utc).astimezone(timezone(timedelta(hours=5, minutes=30)))
-                    age = (now - mtime).total_seconds()
-                    badge_style = "background-color:#dcfce7; color:#15803d; border-radius:4px; padding:2px 6px; font-weight:bold; display:inline-block; font-size:0.8em;" if age < 86400 else "background-color:#fee2e2; color:#b91c1c; border-radius:4px; padding:2px 6px; font-weight:bold; display:inline-block; font-size:0.8em;"
-                    ts = mtime.strftime("%d-%b %H:%M")
-                    orig = file_meta.get(ft, {}).get("original_name", src_path.name)
-                    st.markdown(
-                        f'<div style="margin-bottom:12px;">'
-                        f'<span style="{badge_style}">● {ft}</span> &nbsp;'
-                        f'<small style="color:#64748b">Uploaded {ts} &nbsp;·&nbsp; 📄 {orig}</small>'
-                        f'</div>',
-                        unsafe_allow_html=True
-                    )
-                elif src_type == "scanned":
-                    mtime = datetime.fromtimestamp(os.path.getmtime(src_path), tz=timezone.utc).astimezone(timezone(timedelta(hours=5, minutes=30)))
-                    age = (now - mtime).total_seconds()
-                    badge_style = "background-color:#dbeafe; color:#1d4ed8; border-radius:4px; padding:2px 6px; font-weight:bold; display:inline-block; font-size:0.8em;" if age < 86400 else "background-color:#fee2e2; color:#b91c1c; border-radius:4px; padding:2px 6px; font-weight:bold; display:inline-block; font-size:0.8em;"
-                    ts = mtime.strftime("%d-%b %H:%M")
-                    name_upper = src_path.name.upper()
-                    is_con = ("TCF VIN" in name_upper and "FLOAT" in name_upper and "MAPPING" in name_upper)
-                    label = "Consolidated" if is_con else "Auto-scanned"
-                    st.markdown(
-                        f'<div style="margin-bottom:12px;">'
-                        f'<span style="{badge_style}">◉ {ft}</span> &nbsp;'
-                        f'<small style="color:#64748b">{label} {ts} &nbsp;·&nbsp; 📄 {src_path.name}</small>'
-                        f'</div>',
-                        unsafe_allow_html=True
-                    )
-                else:
-                    st.markdown(
-                        f'<div style="margin-bottom:12px;">'
-                        f'<span style="background-color:#f1f5f9; color:#64748b; border-radius:4px; padding:2px 6px; font-weight:bold; display:inline-block; font-size:0.8em;">○ {ft}</span> &nbsp;'
-                        f'<small style="color:#94a3b8">— not found</small>'
-                        f'</div>',
-                        unsafe_allow_html=True
-                    )
+        # ── 2. Grid of File Status Cards ──
+        st.markdown("### 📋 Data Channel Status")
+        
+        # We group RAW_FILE_TYPES into rows of 3 columns
+        rows = [RAW_FILE_TYPES[i:i + 3] for i in range(0, len(RAW_FILE_TYPES), 3)]
+        
+        for row_files in rows:
+            cols = st.columns(3)
+            for idx, ft in enumerate(row_files):
+                with cols[idx]:
+                    src_type, src_path = get_source(ft)
+                    
+                    if src_type == "uploaded":
+                        mtime = datetime.fromtimestamp(os.path.getmtime(src_path), tz=timezone.utc).astimezone(timezone(timedelta(hours=5, minutes=30)))
+                        age = (now - mtime).total_seconds()
+                        pill_class = "pill-badge-success" if age < 86400 else "pill-badge-danger"
+                        status_label = "● Uploaded"
+                        ts = mtime.strftime("%d-%b %H:%M")
+                        orig = file_meta.get(ft, {}).get("original_name", src_path.name)
+                        meta_html = f'<div class="card-meta-line"><b>File:</b> {orig}<br><b>Time:</b> {ts}</div>'
+                    elif src_type == "scanned":
+                        mtime = datetime.fromtimestamp(os.path.getmtime(src_path), tz=timezone.utc).astimezone(timezone(timedelta(hours=5, minutes=30)))
+                        age = (now - mtime).total_seconds()
+                        pill_class = "pill-badge-info" if age < 86400 else "pill-badge-danger"
+                        name_upper = src_path.name.upper()
+                        is_con = ("TCF VIN" in name_upper and "FLOAT" in name_upper and "MAPPING" in name_upper)
+                        status_label = "◉ Consolidated" if is_con else "◉ Scanned"
+                        ts = mtime.strftime("%d-%b %H:%M")
+                        meta_html = f'<div class="card-meta-line"><b>File:</b> {src_path.name}<br><b>Time:</b> {ts}</div>'
+                    else:
+                        pill_class = "pill-badge-warning"
+                        status_label = "○ Missing"
+                        meta_html = '<div class="card-meta-line" style="color:#94a3b8">— file not loaded —</div>'
 
-            # BOM Master Status
-            st.markdown("### 🗂 BOM Master Data")
+                    # Render card HTML
+                    st.markdown(
+                        f'<div class="file-status-card">'
+                        f'  <div class="card-header-line">'
+                        f'    <span class="card-title">{ft}</span>'
+                        f'    <span class="pill-badge {pill_class}">{status_label}</span>'
+                        f'  </div>'
+                        f'  {meta_html}'
+                        f'</div>',
+                        unsafe_allow_html=True
+                    )
+        
+        st.markdown("")
+
+        # ── 3. BOM & Upload Actions side-by-side ──
+        c_bom, c_up = st.columns([1, 1])
+
+        with c_bom:
+            st.markdown("### 🗂 BOM Master Status")
             bom_info = get_bom_info()
             if bom_info:
                 bom_ts = bom_info.get("loaded_at", "Unknown")
                 bom_rows = bom_info.get("row_count", 0)
                 bom_src = bom_info.get("source", "Unknown")
                 st.markdown(
-                    f'<div style="background-color:#f0fdf4; border:1px solid #bbf7d0; border-radius:6px; padding:10px; margin-top:10px;">'
-                    f'<span style="color:#166534; font-weight:bold;">✅ BOM Loaded</span><br>'
-                    f'<small style="color:#166534">{bom_rows} variants &nbsp;·&nbsp; 📄 {bom_src} &nbsp;·&nbsp; 🕐 {bom_ts}</small>'
+                    f'<div style="background-color:#f0fdf4; border:1px solid #bbf7d0; border-radius:12px; padding:16px;">'
+                    f'<span style="color:#166534; font-weight:bold; font-size:1.05rem;">✅ BOM Loaded & Active</span><br>'
+                    f'<div style="margin-top:8px; font-size:0.85rem; color:#166534; line-height:1.5;">'
+                    f'<b>Variants:</b> {bom_rows} unique Short VCs<br>'
+                    f'<b>Source:</b> {bom_src}<br>'
+                    f'<b>Import Time:</b> {bom_ts}'
+                    f'</div>'
                     f'</div>',
                     unsafe_allow_html=True
                 )
@@ -2243,14 +3357,16 @@ def main():
                     st.success("✅ **BOM Integrity OK**: All active Short VCs are mapped in BOM details!")
             else:
                 st.markdown(
-                    f'<div style="background-color:#fef2f2; border:1px solid #fecaca; border-radius:6px; padding:10px; margin-top:10px;">'
-                    f'<span style="color:#991b1b; font-weight:bold;">⚠️ BOM Missing</span><br>'
-                    f'<small style="color:#991b1b">Please ensure <b>Bom details.xlsx</b> is present in the project folder.</small>'
+                    f'<div style="background-color:#fef2f2; border:1px solid #fecaca; border-radius:12px; padding:16px;">'
+                    f'<span style="color:#991b1b; font-weight:bold; font-size:1.05rem;">⚠️ BOM Master Missing</span><br>'
+                    f'<div style="margin-top:8px; font-size:0.85rem; color:#991b1b;">'
+                    f'Please ensure <b>Bom details.xlsx</b> is present in the project folder to enable part mappings.'
+                    f'</div>'
                     f'</div>',
                     unsafe_allow_html=True
                 )
 
-        with col_upload:
+        with c_up:
             st.markdown("### 📁 Upload / Update Data")
             selected_ft = st.selectbox("Select file type to update", RAW_FILE_TYPES, key="tab6_ft_select")
             uploaded = st.file_uploader(
@@ -2266,15 +3382,9 @@ def main():
                     st.session_state[state_key] = upload_sig
                     st.toast(f"✅ {selected_ft} saved successfully!", icon="✅")
                     st.cache_data.clear()
+                    if "engine_editor_df" in st.session_state:
+                        del st.session_state["engine_editor_df"]
                     st.rerun()
-
-            st.divider()
-            st.markdown("### 🗑️ Reset Options")
-            if st.button("🔄 Manual Daily Reset", help="Clear all manually uploaded files and JSON stocks."):
-                _perform_reset()
-                st.success("✅ Reset complete — all uploads and caches cleared!")
-                st.cache_data.clear()
-                st.rerun()
 
 
 
