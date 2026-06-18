@@ -198,7 +198,7 @@ footer { display: none !important; }
 .section-title {
     font-size: 1.25rem !important;
     font-weight: 700 !important;
-    color: #0f172a !important;
+    color: inherit !important;
     margin: 28px 0 14px 0 !important;
     padding-left: 12px !important;
     border-left: 4px solid #2563eb !important;
@@ -208,8 +208,8 @@ footer { display: none !important; }
 
 /* Glassmorphic Metric Cards */
 [data-testid="stMetric"] {
-    background: #ffffff !important;
-    border: 1px solid #e2e8f0 !important;
+    background: var(--secondary-background-color, #ffffff) !important;
+    border: 1px solid var(--border-color, #e2e8f0) !important;
     padding: 16px 20px !important;
     border-radius: 16px !important;
     box-shadow: 0 4px 15px -3px rgba(0, 0, 0, 0.04) !important;
@@ -231,7 +231,7 @@ footer { display: none !important; }
     font-size: 1.8rem !important;
     font-weight: 800 !important;
     letter-spacing: -0.03em !important;
-    color: #0f172a !important;
+    color: inherit !important;
 }
 
 /* Sidebar Custom Styling */
