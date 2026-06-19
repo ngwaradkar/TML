@@ -52,50 +52,58 @@ def _find_header_row(df_raw, keywords, max_scan=15):
                 return i
     return None
 
-f = 'PPC_Float_Report_Paint_16_06_2026 09_14_33_PM.xls'
-print(f"File: {f}")
-print(f"Is HTML XLS: {_is_html_xls(f)}")
+if __name__ == "__main__":
+    from io import StringIO
+    f = 'PPC_Float_Report_Paint_16_06_2026 09_14_33_PM.xls'
+    print(f"File: {f}")
+    if not os.path.exists(f):
+        print(f"File {f} not found, skipping execution")
+    else:
+        print(f"Is HTML XLS: {_is_html_xls(f)}")
 
-# Read it
-tables = pd.read_html(f, header=None)
-df = tables[0]
-print(f"Raw shape: {df.shape}")
+        # Read it using lxml
+        with open(f, "r", encoding="utf-8", errors="ignore") as file_obj:
+            html_content = file_obj.read()
+        tables = pd.read_html(StringIO(html_content), flavor="lxml")
+        df = tables[0]
+        print(f"Raw shape: {df.shape}")
 
-h = _find_header_row(df, ["MARKET", "PRODUCT FAMILY", "SHORT VC"])
-print(f"Header row index: {h}")
+        h = _find_header_row(df, ["MARKET", "PRODUCT FAMILY", "SHORT VC"])
+        print(f"Header row index: {h}")
 
-data = df.iloc[h + 1:].copy().reset_index(drop=True)
-while len(data.columns) < 16:
-    data[len(data.columns)] = np.nan
-data = data.iloc[:, :16]
-data.columns = PF_HEADERS[:16]
+        data = df.iloc[h + 1:].copy().reset_index(drop=True)
+        while len(data.columns) < 16:
+            data[len(data.columns)] = np.nan
+        data = data.iloc[:, :16]
+        data.columns = PF_HEADERS[:16]
 
-for c in ["WIRING_PART_NUMBER","COCKPIT","ENGINE","FOR_MODEL_FLOAT"]:
-    data[c] = ""
+        for c in ["WIRING_PART_NUMBER","COCKPIT","ENGINE","FOR_MODEL_FLOAT"]:
+            data[c] = ""
 
-for col in data.columns:
-    if data[col].dtype == 'object':
-        data[col] = data[col].astype(str).str.strip()
-        data[col] = data[col].replace({"nan": np.nan, "None": np.nan, "": np.nan, "0": np.nan, "0.0": np.nan})
+        for col in data.columns:
+            if data[col].dtype == 'object':
+                data[col] = data[col].astype(str).str.strip()
+                data[col] = data[col].replace({"nan": np.nan, "None": np.nan, "": np.nan, "0": np.nan, "0.0": np.nan})
 
-data = data[data["SHORT_VC"].notna()]
-data = data[~data["SHORT_VC"].astype(str).str.contains("Total|Grand|TCF", na=False, case=False)]
+        data = data[data["SHORT_VC"].notna()]
+        data = data[~data["SHORT_VC"].astype(str).str.contains("Total|Grand|TCF", na=False, case=False)]
 
-for col in FLOAT_COLS:
-    data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0).astype(int)
+        for col in FLOAT_COLS:
+            data[col] = pd.to_numeric(data[col], errors='coerce').fillna(0).astype(int)
 
-def classify(vc):
-    vc_str = str(vc).strip()[:4]
-    for k, (mod, ln) in MODEL_MAP.items():
-        if vc_str.startswith(k[:4]):
-            return pd.Series([mod, ln])
-    return pd.Series(["OTHER", "UNKNOWN"])
+        def classify(vc):
+            vc_str = str(vc).strip()[:4]
+            for k, (mod, ln) in MODEL_MAP.items():
+                if vc_str.startswith(k[:4]):
+                    return pd.Series([mod, ln])
+            return pd.Series(["OTHER", "UNKNOWN"])
 
-data[["MODEL","LINE"]] = data["SHORT_VC"].apply(classify)
-data = data[data["LINE"] != "UNKNOWN"].reset_index(drop=True)
+        data[["MODEL","LINE"]] = data["SHORT_VC"].apply(classify)
+        data = data[data["LINE"] != "UNKNOWN"].reset_index(drop=True)
 
-print(f"\nParsed rows: {len(data)}")
-print(f"Lines: {data['LINE'].value_counts().to_dict()}")
-print(f"Models: {data['MODEL'].value_counts().to_dict()}")
-print("\nSample:")
-print(data[["SHORT_VC","SALES_DESCRIPTION","MODEL","LINE","TOTAL_FLOAT","PBS_FLOAT"]].head(5).to_string())
+        print(f"\nParsed rows: {len(data)}")
+        print(f"Lines: {data['LINE'].value_counts().to_dict()}")
+        print(f"Models: {data['MODEL'].value_counts().to_dict()}")
+        print("\nSample:")
+        print(data[["SHORT_VC","SALES_DESCRIPTION","MODEL","LINE","TOTAL_FLOAT","PBS_FLOAT"]].head(5).to_string())
+

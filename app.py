@@ -9,6 +9,8 @@ paint float pipeline, and presents 4 interactive summary tabs.
 import streamlit as st
 import pandas as pd
 import numpy as np
+
+pd.set_option('future.no_silent_downcasting', True)
 import os
 import json
 import re
@@ -567,11 +569,24 @@ def _perform_reset():
             deleted.append(BOM_FILE.name)
         except Exception:
             pass
+    # Reset persistent json caches
+    for f in DATA_DIR.glob("cache_*.json"):
+        try:
+            f.unlink()
+        except Exception:
+            pass
     # Reset file metadata
     meta_path = _get_meta_path()
     if meta_path.exists():
         try:
             meta_path.unlink()
+        except Exception:
+            pass
+    # Clear session state uploader keys and signatures to prevent stale uploads
+    keys_to_clear = [k for k in st.session_state.keys() if k.startswith("last_processed_") or k.startswith("tab6_upload_")]
+    for k in keys_to_clear:
+        try:
+            del st.session_state[k]
         except Exception:
             pass
     # Clear Streamlit cache so fresh data is loaded
@@ -595,9 +610,31 @@ def load_bom_master() -> pd.DataFrame:
     if not bom_path.exists():
         # Search recursively
         root_dir = Path("d:/TML PPC Dashboard")
-        matches = [f for f in root_dir.rglob("Bom details.xlsx") if "data" not in f.parts and "test_runs" not in f.parts]
-        if matches:
-            bom_path = max(matches, key=os.path.getmtime)
+        if (root_dir / "Bom details.xlsx").exists():
+            bom_path = root_dir / "Bom details.xlsx"
+        elif (root_dir / "Project" / "Project files" / "Bom details.xlsx").exists():
+            bom_path = root_dir / "Project" / "Project files" / "Bom details.xlsx"
+        else:
+            matches = [f for f in root_dir.rglob("Bom details.xlsx") if "data" not in f.parts and "test_runs" not in f.parts]
+            if matches:
+                bom_path = max(matches, key=os.path.getmtime)
+
+    # Try loading from cached JSON if it exists and matches modification time of source Excel
+    if bom_path.exists():
+        try:
+            mtime = os.path.getmtime(bom_path)
+            if BOM_FILE.exists():
+                with open(BOM_FILE) as f:
+                    cached = json.load(f)
+                if cached.get("source") == str(bom_path) and cached.get("source_mtime") == mtime:
+                    df = pd.DataFrame(cached.get("data", []))
+                    if not df.empty:
+                        for col in ["SHORT_VC", "FRONT_WIRING", "COCKPIT", "ENGINE"]:
+                            if col in df.columns:
+                                df[col] = df[col].astype(str).str.strip().replace({"nan": np.nan, "None": np.nan, "": np.nan})
+                        return df
+        except Exception:
+            pass
 
     # Try loading from BOM source file directly
     if bom_path.exists():
@@ -633,6 +670,7 @@ def load_bom_master() -> pd.DataFrame:
             with open(BOM_FILE, "w") as f:
                 json.dump({
                     "source": str(bom_path),
+                    "source_mtime": os.path.getmtime(bom_path),
                     "loaded_at": get_ist_now().strftime("%Y-%m-%d %H:%M:%S"),
                     "row_count": len(df),
                     "data": records
@@ -748,6 +786,68 @@ def _get_last_reset_datetime() -> datetime:
     return datetime(1970, 1, 1, tzinfo=timezone(timedelta(hours=5, minutes=30)))
 
 
+@st.cache_data
+def _scan_workspace_files(last_reset_dt_str: str) -> list:
+    """Scan workspace for Excel files, ignoring files modified before last_reset_dt.
+    Uses a fast directory walk with pruning of unwanted directories.
+    """
+    last_reset_dt = datetime.strptime(last_reset_dt_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone(timedelta(hours=5, minutes=30))) if last_reset_dt_str else datetime(1970, 1, 1, tzinfo=timezone(timedelta(hours=5, minutes=30)))
+    
+    root_dir = Path("d:/TML PPC Dashboard")
+    all_files = []
+    if root_dir.exists():
+        for root, dirs, files in os.walk(root_dir):
+            # Prune directories in place to prevent os.walk from entering them
+            dirs[:] = [d for d in dirs if d not in [".git", "data", "test_runs", ".agents", "__pycache__", ".pytest_cache", ".streamlit"]]
+            for file in files:
+                if file.lower().endswith((".xls", ".xlsx", ".xlsb")):
+                    f = Path(root) / file
+                    try:
+                        mtime = datetime.fromtimestamp(os.path.getmtime(f), tz=timezone.utc).astimezone(timezone(timedelta(hours=5, minutes=30)))
+                        if mtime >= last_reset_dt:
+                            all_files.append(f)
+                    except Exception:
+                        continue
+    return all_files
+
+
+def load_with_persistent_cache(cache_key: str, src_path: str, parse_func, *args, **kwargs) -> pd.DataFrame:
+    """Load parsed data from a persistent JSON cache if it exists and is up to date,
+    otherwise parse and save to JSON cache.
+    """
+    cache_meta_file = DATA_DIR / f"cache_{cache_key}_meta.json"
+    cache_data_file = DATA_DIR / f"cache_{cache_key}.json"
+    
+    try:
+        current_mtime = os.path.getmtime(src_path)
+    except Exception:
+        current_mtime = 0.0
+
+    if cache_meta_file.exists() and cache_data_file.exists():
+        try:
+            with open(cache_meta_file, "r") as f:
+                meta = json.load(f)
+            if meta.get("file_mtime") == current_mtime:
+                df = pd.read_json(cache_data_file, orient="split")
+                return df
+        except Exception:
+            pass
+
+    # Cache miss
+    df = parse_func(*args, **kwargs)
+    
+    # Save to persistent cache
+    try:
+        DATA_DIR.mkdir(exist_ok=True)
+        with open(cache_meta_file, "w") as f:
+            json.dump({"file_mtime": current_mtime}, f)
+        df.to_json(cache_data_file, orient="split")
+    except Exception:
+        pass
+        
+    return df
+
+
 def get_source(file_type: str):
     """Return (source_type, path) — 'uploaded' or 'scanned' or (None, None).
     Recursively searches project directory (including Project folder) and
@@ -760,26 +860,10 @@ def get_source(file_type: str):
             return "uploaded", up
 
     last_reset_dt = _get_last_reset_datetime()
+    last_reset_dt_str = last_reset_dt.strftime("%Y-%m-%d %H:%M:%S")
 
-    # Recursively find all Excel files in the workspace (excluding cache/test/git dirs)
-    root_dir = Path("d:/TML PPC Dashboard")
-    all_files = []
-    if root_dir.exists():
-        for ext in ["*.xls", "*.xlsx", "*.xlsb"]:
-            for f in root_dir.rglob(ext):
-                path_parts = f.parts
-                if "data" in path_parts or "test_runs" in path_parts or ".git" in path_parts or "__pycache__" in path_parts:
-                    continue
-                
-                # Check modification time against the last reset datetime
-                try:
-                    mtime = datetime.fromtimestamp(os.path.getmtime(f), tz=timezone.utc).astimezone(timezone(timedelta(hours=5, minutes=30)))
-                    if mtime < last_reset_dt:
-                        continue
-                except Exception:
-                    continue
-
-                all_files.append(f)
+    # Get scanned files from cached workspace scanner
+    all_files = _scan_workspace_files(last_reset_dt_str)
 
     # Keywords/patterns to match individual files by file_type
     patterns = {
@@ -843,7 +927,7 @@ def _read_html_table_bs4(path) -> pd.DataFrame:
     from bs4 import BeautifulSoup
     with open(path, "rb") as f:
         raw = f.read().decode("utf-8", errors="replace")
-    soup = BeautifulSoup(raw, "html.parser")
+    soup = BeautifulSoup(raw, "lxml")
     table = soup.find("table")
     if table is None:
         return pd.DataFrame()
@@ -1353,7 +1437,8 @@ def _find_header_row(df_raw, keywords, max_scan=15):
     return None
 
 
-def parse_paint_float(src_type, src_path, pm_df=None) -> pd.DataFrame:
+@st.cache_data
+def parse_paint_float(src_type, src_path, pm_df=None, file_mtime: float = 0.0) -> pd.DataFrame:
     """Parse Paint Float into a clean DataFrame with model/line assignments."""
     df = read_sheet(src_type, src_path, "Paint Float", header=None)
 
@@ -1416,7 +1501,8 @@ def parse_paint_float(src_type, src_path, pm_df=None) -> pd.DataFrame:
     return data
 
 
-def parse_dpt_plan(src_type, src_path, sheet_name, line_label) -> pd.DataFrame:
+@st.cache_data
+def parse_dpt_plan(src_type, src_path, sheet_name, line_label, file_mtime: float = 0.0) -> pd.DataFrame:
     """Parse a DPT Plan VIN Generation Report.
 
     Supports both real .xlsb files and HTML-as-.xls exports from web portals.
@@ -1509,7 +1595,8 @@ def parse_dpt_plan(src_type, src_path, sheet_name, line_label) -> pd.DataFrame:
     return data
 
 
-def parse_wiring_tcf1(src_type, src_path) -> pd.DataFrame:
+@st.cache_data
+def parse_wiring_tcf1(src_type, src_path, file_mtime: float = 0.0) -> pd.DataFrame:
     """Parse TCF1 Wiring File → part, stock, plan per wiring harness."""
     sheet_name = "TCF1 Wiring File"
     if src_type in ["uploaded", "scanned"]:
@@ -1574,7 +1661,8 @@ def parse_wiring_tcf1(src_type, src_path) -> pd.DataFrame:
     )
 
 
-def parse_wiring_tcf2(src_type, src_path) -> pd.DataFrame:
+@st.cache_data
+def parse_wiring_tcf2(src_type, src_path, file_mtime: float = 0.0) -> pd.DataFrame:
     """Parse TCF2 Wiring File → Short VC, stock (needs PM mapping)."""
     df = read_sheet(src_type, src_path, "TCF2 Wiring File", header=None)
 
@@ -1624,7 +1712,8 @@ def parse_wiring_tcf2(src_type, src_path) -> pd.DataFrame:
     )
 
 
-def parse_cockpit_file(src_type, src_path, sheet_name, line_label) -> pd.DataFrame:
+@st.cache_data
+def parse_cockpit_file(src_type, src_path, sheet_name, line_label, file_mtime: float = 0.0) -> pd.DataFrame:
     """Parse a cockpit / DPT raw file.
     Extracts: Cockpit WH Number, Short VC, Stock/Coverage, Today's O/P.
     """
@@ -2691,6 +2780,20 @@ def main():
     )
     st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
 
+    # Debug log session state
+    try:
+        with open("data/debug_state.log", "a", encoding="utf-8") as f:
+            f.write(f"--- RERUN {datetime.now().isoformat()} ---\n")
+            f.write(f"session_state keys: {list(st.session_state.keys())}\n")
+            for k in list(st.session_state.keys()):
+                val = st.session_state[k]
+                if isinstance(val, (str, int, float, bool, list, dict)):
+                    f.write(f"  {k}: {val}\n")
+                else:
+                    f.write(f"  {k}: {type(val)} (non-serializable)\n")
+    except Exception:
+        pass
+
     # ── Daily 6:30 AM Reset ──
     reset_performed = check_and_perform_daily_reset()
     if reset_performed:
@@ -2701,6 +2804,12 @@ def main():
 
     now = get_ist_now()
     file_meta = _load_file_meta()
+
+    # (removed early upload handler; moved processing to tab6 after file_uploader rendering)
+
+    if "show_upload_toast" in st.session_state:
+        st.toast(st.session_state["show_upload_toast"], icon="✅")
+        del st.session_state["show_upload_toast"]
 
     # ═══════════════════════════════════════════
     # SIDEBAR
@@ -2722,6 +2831,8 @@ def main():
             "🔍 Global VIN / Part Lookup",
             placeholder="e.g. 54680124A or 546854600108",
         )
+
+        pass
 
 
 
@@ -2749,7 +2860,12 @@ def main():
         # ── Paint Float ──
         pf_src, pf_path = get_source("Paint Float")
         if pf_src is not None:
-            paint_df = parse_paint_float(pf_src, str(pf_path), pm)
+            paint_df = load_with_persistent_cache(
+                "paint_float",
+                str(pf_path),
+                parse_paint_float,
+                pf_src, str(pf_path), pm, file_mtime=os.path.getmtime(pf_path)
+            )
             if not paint_df.empty:
                 paint_loaded = True
 
@@ -2760,7 +2876,14 @@ def main():
                 s, p = get_source(ft)
                 if s:
                     try:
-                        dpt_frames.append(parse_dpt_plan(s, str(p), sheet, label))
+                        dpt_frames.append(
+                            load_with_persistent_cache(
+                                f"dpt_plan_{label}",
+                                str(p),
+                                parse_dpt_plan,
+                                s, str(p), sheet, label, file_mtime=os.path.getmtime(p)
+                            )
+                        )
                     except Exception:
                         pass
             dpt_all = pd.concat(dpt_frames, ignore_index=True) if dpt_frames else None
@@ -2772,10 +2895,20 @@ def main():
 
             # ── Wiring Files ──
             w1_src, w1_path = get_source("TCF1 Wiring File")
-            wiring_tcf1 = parse_wiring_tcf1(w1_src, str(w1_path)) if w1_src else None
+            wiring_tcf1 = load_with_persistent_cache(
+                "wiring_tcf1",
+                str(w1_path),
+                parse_wiring_tcf1,
+                w1_src, str(w1_path), file_mtime=os.path.getmtime(w1_path)
+            ) if w1_src else None
 
             w2_src, w2_path = get_source("TCF2 Wiring File")
-            wiring_tcf2 = parse_wiring_tcf2(w2_src, str(w2_path)) if w2_src else None
+            wiring_tcf2 = load_with_persistent_cache(
+                "wiring_tcf2",
+                str(w2_path),
+                parse_wiring_tcf2,
+                w2_src, str(w2_path), file_mtime=os.path.getmtime(w2_path)
+            ) if w2_src else None
 
             # ── Cockpit Files ──
             for ft, sheet, label in [
@@ -2786,7 +2919,14 @@ def main():
                 s, p = get_source(ft)
                 if s:
                     try:
-                        cockpit_dfs.append(parse_cockpit_file(s, str(p), sheet, label))
+                        cockpit_dfs.append(
+                            load_with_persistent_cache(
+                                f"cockpit_{_safe(ft)}",
+                                str(p),
+                                parse_cockpit_file,
+                                s, str(p), sheet, label, file_mtime=os.path.getmtime(p)
+                            )
+                        )
                     except Exception:
                         pass
 
@@ -3380,7 +3520,7 @@ def main():
                 if st.session_state.get(state_key) != upload_sig:
                     save_upload(uploaded, selected_ft)
                     st.session_state[state_key] = upload_sig
-                    st.toast(f"✅ {selected_ft} saved successfully!", icon="✅")
+                    st.session_state["show_upload_toast"] = f"✅ {selected_ft} saved successfully!"
                     st.cache_data.clear()
                     if "engine_editor_df" in st.session_state:
                         del st.session_state["engine_editor_df"]
